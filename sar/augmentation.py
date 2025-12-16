@@ -28,28 +28,19 @@ def get_pretrain_augmentation(img_size=224):
         A.HorizontalFlip(p=0.5),
         A.VerticalFlip(p=0.5),
         A.RandomRotate90(p=0.5),
-        A.ShiftScaleRotate(
-            shift_limit=0.1,
-            scale_limit=0.2,
-            rotate_limit=45,
-            border_mode=0,
-            p=0.7
-        ),
-
-        # Affine transformations
         A.Affine(
             scale=(0.8, 1.2),
             translate_percent=(-0.1, 0.1),
-            rotate=(-15, 15),
+            rotate=(-45, 45),
             shear=(-10, 10),
-            p=0.5
+            p=0.7
         ),
 
         # Elastic/Grid distortions
         A.OneOf([
             A.ElasticTransform(alpha=120, sigma=120 * 0.05, p=1.0),
             A.GridDistortion(num_steps=5, distort_limit=0.3, p=1.0),
-            A.OpticalDistortion(distort_limit=0.2, shift_limit=0.2, p=1.0),
+            A.OpticalDistortion(distort_limit=0.2, p=1.0),
         ], p=0.3),
 
         # Intensity augmentations
@@ -66,15 +57,15 @@ def get_pretrain_augmentation(img_size=224):
 
         # Noise
         A.OneOf([
-            A.GaussNoise(var_limit=(10.0, 50.0), p=1.0),
+            A.GaussNoise(p=1.0),
             A.MultiplicativeNoise(multiplier=(0.9, 1.1), p=1.0),
         ], p=0.3),
 
         # Coarse dropout (similar to cutout)
         A.CoarseDropout(
-            max_holes=8,
-            max_height=int(img_size * 0.1),
-            max_width=int(img_size * 0.1),
+            num_holes_range=(4, 8),
+            hole_height_range=(int(img_size * 0.05), int(img_size * 0.1)),
+            hole_width_range=(int(img_size * 0.05), int(img_size * 0.1)),
             fill_value=0,
             p=0.3
         ),
@@ -125,7 +116,7 @@ def get_simclr_augmentation(img_size=224):
         ], p=0.5),
 
         # Noise
-        A.GaussNoise(var_limit=(10.0, 50.0), p=0.3),
+        A.GaussNoise(p=0.3),
 
         # Normalize
         A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
@@ -150,11 +141,11 @@ def get_detection_train_augmentation(img_size=224):
         A.VerticalFlip(p=0.5),
         A.RandomRotate90(p=0.5),
 
-        A.ShiftScaleRotate(
-            shift_limit=0.1,
-            scale_limit=0.2,
-            rotate_limit=30,
-            border_mode=0,
+        A.Affine(
+            scale=(0.8, 1.2),
+            translate_percent=(-0.1, 0.1),
+            rotate=(-30, 30),
+            shear=(-5, 5),
             p=0.7
         ),
 
@@ -178,7 +169,7 @@ def get_detection_train_augmentation(img_size=224):
             A.GaussianBlur(blur_limit=5, p=1.0),
         ], p=0.3),
 
-        A.GaussNoise(var_limit=(10.0, 30.0), p=0.3),
+        A.GaussNoise(p=0.3),
 
         # Normalize
         A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),

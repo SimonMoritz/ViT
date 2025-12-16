@@ -56,11 +56,11 @@ class MAEDecoder(nn.Module):
     def _init_weights(self):
         nn.init.trunc_normal_(self.mask_token, std=0.02)
 
-    def _init_pos_embed(self, n_patches):
+    def _init_pos_embed(self, n_patches, device):
         """Initialize positional embeddings if not already done."""
         if self.decoder_pos_embed is None or self.decoder_pos_embed.shape[1] != n_patches:
             self.decoder_pos_embed = nn.Parameter(
-                torch.zeros(1, n_patches, self.decoder_embed_dim),
+                torch.zeros(1, n_patches, self.decoder_embed_dim, device=device),
                 requires_grad=True
             )
             nn.init.trunc_normal_(self.decoder_pos_embed, std=0.02)
@@ -75,11 +75,10 @@ class MAEDecoder(nn.Module):
         """
         B, N_visible, D = x.shape
         N_total = mask_indices.shape[1]
-
-        # Initialize positional embeddings
-        self._init_pos_embed(N_total)
         device = x.device
-        self.decoder_pos_embed = self.decoder_pos_embed.to(device)
+
+        # Initialize positional embeddings on correct device
+        self._init_pos_embed(N_total, device)
 
         # Project to decoder dimension
         x = self.decoder_embed(x)  # (B, N_visible, decoder_D)
