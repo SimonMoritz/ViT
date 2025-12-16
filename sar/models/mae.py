@@ -269,12 +269,7 @@ class MAE(nn.Module):
         # Compute reconstruction loss (only on masked patches)
         target = self.patchify(imgs)  # (B, N, patch_size^2 * C)
 
-        # Normalize targets per patch (improves representation quality)
-        mean = target.mean(dim=-1, keepdim=True)
-        var = target.var(dim=-1, keepdim=True)
-        target = (target - mean) / (var + 1e-6) ** 0.5
-
-        # MSE loss only on masked patches
+        # MSE loss only on masked patches (no per-patch normalization for SAR images)
         loss = (pred_patches - target) ** 2
         loss = loss.mean(dim=-1)  # (B, N) - mean loss per patch
 
@@ -284,8 +279,6 @@ class MAE(nn.Module):
         # Reconstruct full image for visualization
         with torch.no_grad():
             pred_patches_full = pred_patches.detach()
-            # De-normalize
-            pred_patches_full = pred_patches_full * (var + 1e-6) ** 0.5 + mean
             pred_imgs = self.unpatchify(pred_patches_full, H, W)
 
         return loss, pred_imgs, mask
