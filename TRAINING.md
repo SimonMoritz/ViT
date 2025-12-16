@@ -2,30 +2,6 @@
 
 This document describes the complete training pipeline for SAR airport object detection using ViT-Tiny + RT-DETR.
 
-## Architecture Overview
-
-```
-Image (224×224)
-  ↓
-Patch Embedding (16×16 patches)
-  ↓
-ViT-Tiny Encoder (pretrained by MAE + SimCLR)
-  - 12 layers
-  - 192 embedding dim
-  - 3 attention heads
-  - ~5M parameters
-  ↓
-Patch tokens (196 tokens)
-  ↓
-RT-DETR Detection Head
-  - 100 object queries
-  - 6 decoder layers
-  - Hungarian matching
-  - Classification + Bbox regression
-  ↓
-Bounding boxes + class predictions
-```
-
 ## Training Stages
 
 ### Stage 1: MAE Pretraining (Self-Supervised)
@@ -79,8 +55,6 @@ uv run python -m sar.train.train_simclr \
 - NT-Xent contrastive loss
 - Saves encoder weights to `checkpoints/simclr/encoder_simclr_final.pth`
 
-**Expected Training Time**: ~1-3 hours on GPU
-
 ---
 
 ### Stage 3: RT-DETR Detection Training (Supervised)
@@ -111,8 +85,6 @@ uv run python -m sar.train.train_detection \
 - Combined loss: classification + L1 bbox + GIoU
 - Heavy augmentation for training (bbox-safe transforms)
 - Saves best model based on validation loss
-
-**Expected Training Time**: ~2-4 hours on GPU
 
 ---
 
@@ -202,19 +174,6 @@ tensorboard --logdir checkpoints
 
 ---
 
-## Expected Results
-
-With this architecture and dataset size:
-
-- **Pretraining should converge**: MAE loss should decrease steadily
-- **Detection may overfit**: 432 images is small for transformers
-- **Augmentation helps**: Heavy augmentation reduces overfitting
-- **Pretrain improves**: Self-supervised pretraining significantly boosts performance
-
-Monitor validation loss carefully and use best checkpoint for final evaluation.
-
----
-
 ## Next Steps
 
 After training:
@@ -244,17 +203,3 @@ sar/
     ├── train_simclr.py  # SimCLR training script
     └── train_detection.py  # Detection training script
 ```
-
----
-
-## Citation
-
-If you use this implementation, consider citing the original papers:
-
-**MAE**: He et al., "Masked Autoencoders Are Scalable Vision Learners", CVPR 2022
-
-**SimCLR**: Chen et al., "A Simple Framework for Contrastive Learning of Visual Representations", ICML 2020
-
-**DETR**: Carion et al., "End-to-End Object Detection with Transformers", ECCV 2020
-
-**RT-DETR**: Zhao et al., "DETRs Beat YOLOs on Real-time Object Detection", arXiv 2023
