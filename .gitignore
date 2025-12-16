@@ -1,0 +1,16 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# datasets
+Airport_Dataset_v0_images
+Airport_Dataset_v0_labels
+dataset
+*.zip
