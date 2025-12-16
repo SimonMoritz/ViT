@@ -138,16 +138,3 @@ tensorboard --logdir checkpoints
 3. **GPU memory**: Lower batch size if OOM
 4. **Encoder freezing**: Freeze encoder for first 5-10 epochs to stabilize DETR head
 5. **Checkpoints**: Use best validation checkpoint, not final epoch
-
-## TODO
-
-- [ ] Implement evaluation metrics (mAP, precision, recall)
-- [ ] Create inference script for new images
-- [ ] Add visualization for predictions
-- [ ] Export to ONNX for deployment
-- [ ] Experiment with different architectures
-
-## License
-
-Dataset: SAR Airport Dataset v0
-Code: MIT License
