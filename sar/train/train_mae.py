@@ -68,7 +68,24 @@ def train_mae(
 
     # Model
     encoder = ViTTiny(img_size=img_size, use_cls_token=False)
-    mae = MAE(encoder, mask_ratio=mask_ratio, patch_size=16)
+
+    # Scale decoder capacity with image size
+    if img_size >= 512:
+        decoder_config = {
+            'decoder_embed_dim': 256,  # 2x larger for high-res
+            'decoder_depth': 8,        # 2x deeper
+            'decoder_n_heads': 8,      # 2x more heads
+        }
+        print(f"Using LARGE decoder for {img_size}px: dim=256, depth=8, heads=8")
+    else:
+        decoder_config = {
+            'decoder_embed_dim': 128,
+            'decoder_depth': 4,
+            'decoder_n_heads': 4,
+        }
+        print(f"Using standard decoder for {img_size}px: dim=128, depth=4, heads=4")
+
+    mae = MAE(encoder, mask_ratio=mask_ratio, patch_size=16, **decoder_config)
     mae = mae.to(device)
 
     print(f"Model parameters: {sum(p.numel() for p in mae.parameters()) / 1e6:.2f}M")
