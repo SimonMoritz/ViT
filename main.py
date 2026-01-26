@@ -9,7 +9,7 @@ def main():
         train_ratio=0.7,
         val_ratio=0.2,
         test_ratio=0.1,
-        seed=42,
+        seed=43,
     )
 
 

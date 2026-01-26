@@ -69,7 +69,6 @@ class SimCLR(nn.Module):
             z1: Projected representations for x1
             z2: Projected representations for x2
         """
-        B = x1.shape[0]
 
         # Encode both views
         h1 = self.encode(x1)  # (B, D)
@@ -130,7 +129,7 @@ class SimCLR(nn.Module):
 
         # Create mask to exclude self-similarity
         mask = torch.eye(2 * B, device=device, dtype=torch.bool)
-        sim_matrix = sim_matrix.masked_fill(mask, float('-inf'))
+        sim_matrix = sim_matrix.masked_fill(mask, float("-inf"))
 
         # Positive pairs: (i, i+B) and (i+B, i)
         # For each sample i in first half, positive is i+B

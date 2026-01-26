@@ -1,8 +1,7 @@
-"""Masked Autoencoder (MAE) for self-supervised pretraining."""
+"""Masked Autoencoder (MAE) for self-supervised pretraining before supervied training."""
 
 import torch
 import torch.nn as nn
-import numpy as np
 
 
 class MAEDecoder(nn.Module):
@@ -33,23 +32,23 @@ class MAEDecoder(nn.Module):
 
         # Transformer decoder blocks
         from sar.models.vit import TransformerBlock
-        self.decoder_blocks = nn.ModuleList([
-            TransformerBlock(
-                embed_dim=decoder_embed_dim,
-                n_heads=decoder_n_heads,
-                mlp_ratio=4.0,
-                dropout=0.0
-            )
-            for _ in range(decoder_depth)
-        ])
+
+        self.decoder_blocks = nn.ModuleList(
+            [
+                TransformerBlock(
+                    embed_dim=decoder_embed_dim,
+                    n_heads=decoder_n_heads,
+                    mlp_ratio=4.0,
+                    dropout=0.0,
+                )
+                for _ in range(decoder_depth)
+            ]
+        )
 
         self.decoder_norm = nn.LayerNorm(decoder_embed_dim)
 
         # Reconstruct pixels
-        self.decoder_pred = nn.Linear(
-            decoder_embed_dim,
-            patch_size ** 2 * in_channels
-        )
+        self.decoder_pred = nn.Linear(decoder_embed_dim, patch_size**2 * in_channels)
 
         self._init_weights()
 
@@ -58,10 +57,13 @@ class MAEDecoder(nn.Module):
 
     def _init_pos_embed(self, n_patches, device):
         """Initialize positional embeddings if not already done."""
-        if self.decoder_pos_embed is None or self.decoder_pos_embed.shape[1] != n_patches:
+        if (
+            self.decoder_pos_embed is None
+            or self.decoder_pos_embed.shape[1] != n_patches
+        ):
             self.decoder_pos_embed = nn.Parameter(
                 torch.zeros(1, n_patches, self.decoder_embed_dim, device=device),
-                requires_grad=True
+                requires_grad=True,
             )
             nn.init.trunc_normal_(self.decoder_pos_embed, std=0.02)
 
@@ -84,7 +86,9 @@ class MAEDecoder(nn.Module):
         x = self.decoder_embed(x)  # (B, N_visible, decoder_D)
 
         # Create full sequence with mask tokens
-        mask_tokens = self.mask_token.repeat(B, N_total - N_visible, 1)  # (B, N_masked, decoder_D)
+        mask_tokens = self.mask_token.repeat(
+            B, N_total - N_visible, 1
+        )  # (B, N_masked, decoder_D)
 
         # Combine visible and masked tokens
         # We need to unshuffle: put visible tokens back in their original positions
@@ -99,7 +103,7 @@ class MAEDecoder(nn.Module):
         # Place mask tokens in masked positions
         for i in range(B):
             masked_pos = mask_indices[i].nonzero(as_tuple=True)[0]
-            x_full[i, masked_pos] = mask_tokens[i, :len(masked_pos)]
+            x_full[i, masked_pos] = mask_tokens[i, : len(masked_pos)]
 
         # Add positional embeddings
         x_full = x_full + self.decoder_pos_embed
@@ -220,9 +224,7 @@ class MAE(nn.Module):
 
         # Keep first n_keep patches
         ids_keep = ids_shuffle[:, :n_keep]
-        x_masked = torch.gather(
-            x, dim=1, index=ids_keep.unsqueeze(-1).repeat(1, 1, D)
-        )
+        x_masked = torch.gather(x, dim=1, index=ids_keep.unsqueeze(-1).repeat(1, 1, D))
 
         # Generate mask: 0 = keep, 1 = remove
         mask = torch.ones([B, N], device=x.device, dtype=torch.bool)
