@@ -3,7 +3,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
 
 
 class MLP(nn.Module):
@@ -30,10 +29,14 @@ class TransformerDecoderLayer(nn.Module):
         super().__init__()
 
         # Self-attention
-        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=True)
+        self.self_attn = nn.MultiheadAttention(
+            d_model, nhead, dropout=dropout, batch_first=True
+        )
 
         # Cross-attention
-        self.cross_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=True)
+        self.cross_attn = nn.MultiheadAttention(
+            d_model, nhead, dropout=dropout, batch_first=True
+        )
 
         # Feed-forward
         self.linear1 = nn.Linear(d_model, dim_feedforward)
@@ -119,10 +122,12 @@ class RTDETR(nn.Module):
         self.query_embed = nn.Embedding(num_queries, hidden_dim)
 
         # Transformer decoder
-        self.decoder_layers = nn.ModuleList([
-            TransformerDecoderLayer(hidden_dim, nheads, dim_feedforward, dropout)
-            for _ in range(num_decoder_layers)
-        ])
+        self.decoder_layers = nn.ModuleList(
+            [
+                TransformerDecoderLayer(hidden_dim, nheads, dim_feedforward, dropout)
+                for _ in range(num_decoder_layers)
+            ]
+        )
 
         # Prediction heads
         self.class_embed = nn.Linear(hidden_dim, num_classes + 1)  # +1 for background
@@ -159,7 +164,9 @@ class RTDETR(nn.Module):
         memory = self.input_proj(memory)  # (B, N_patches, hidden_dim)
 
         # Get query embeddings
-        query_embed = self.query_embed.weight.unsqueeze(0).repeat(B, 1, 1)  # (B, num_queries, hidden_dim)
+        query_embed = self.query_embed.weight.unsqueeze(0).repeat(
+            B, 1, 1
+        )  # (B, num_queries, hidden_dim)
 
         # Initialize queries (could also use learned initialization)
         tgt = torch.zeros_like(query_embed)
@@ -170,7 +177,9 @@ class RTDETR(nn.Module):
 
         # Predictions
         pred_logits = self.class_embed(tgt)  # (B, num_queries, num_classes+1)
-        pred_boxes = self.bbox_embed(tgt).sigmoid()  # (B, num_queries, 4), normalized to [0, 1]
+        pred_boxes = self.bbox_embed(
+            tgt
+        ).sigmoid()  # (B, num_queries, 4), normalized to [0, 1]
 
         return pred_logits, pred_boxes
 
@@ -216,7 +225,6 @@ class RTDETRLoss(nn.Module):
         device = pred_logits.device
 
         # Flatten batch dimension for matching
-        pred_logits_flat = pred_logits.flatten(0, 1)  # (B*num_queries, num_classes+1)
         pred_boxes_flat = pred_boxes.flatten(0, 1)  # (B*num_queries, 4)
 
         # Concatenate all targets
@@ -224,18 +232,18 @@ class RTDETRLoss(nn.Module):
         target_boxes = []
         batch_idx = []
         for i, t in enumerate(targets):
-            target_labels.append(t['labels'])
-            target_boxes.append(t['boxes'])
-            batch_idx.extend([i] * len(t['labels']))
+            target_labels.append(t["labels"])
+            target_boxes.append(t["boxes"])
+            batch_idx.extend([i] * len(t["labels"]))
 
         if len(target_labels) == 0:
             # No targets in batch
             losses = {
-                'loss_ce': pred_logits.sum() * 0.0,  # Dummy loss
-                'loss_bbox': pred_boxes.sum() * 0.0,
-                'loss_giou': pred_boxes.sum() * 0.0,
+                "loss_ce": pred_logits.sum() * 0.0,  # Dummy loss
+                "loss_bbox": pred_boxes.sum() * 0.0,
+                "loss_giou": pred_boxes.sum() * 0.0,
             }
-            losses['loss'] = sum(losses.values())
+            losses["loss"] = sum(losses.values())
             return losses
 
         target_labels = torch.cat(target_labels).to(device)
@@ -243,9 +251,7 @@ class RTDETRLoss(nn.Module):
         batch_idx = torch.tensor(batch_idx, device=device)
 
         # Hungarian matching
-        indices = self.hungarian_matching(
-            pred_logits, pred_boxes, targets
-        )
+        indices = self.hungarian_matching(pred_logits, pred_boxes, targets)
 
         # Classification loss
         # Create target classes for all queries (most are background)
@@ -255,7 +261,7 @@ class RTDETRLoss(nn.Module):
 
         # Assign matched targets
         for batch_i, (src_idx, tgt_idx) in enumerate(indices):
-            target_classes_o[batch_i, src_idx] = targets[batch_i]['labels'][tgt_idx]
+            target_classes_o[batch_i, src_idx] = targets[batch_i]["labels"][tgt_idx]
 
         # Classification loss (cross-entropy)
         loss_ce = F.cross_entropy(
@@ -267,7 +273,7 @@ class RTDETRLoss(nn.Module):
         idx_tgt = []
         for batch_i, (src_idx, tgt_idx) in enumerate(indices):
             idx_src.append(src_idx + batch_i * num_queries)
-            idx_tgt.append(tgt_idx + sum(len(t['labels']) for t in targets[:batch_i]))
+            idx_tgt.append(tgt_idx + sum(len(t["labels"]) for t in targets[:batch_i]))
 
         if len(idx_src) > 0:
             idx_src = torch.cat(idx_src)
@@ -275,10 +281,12 @@ class RTDETRLoss(nn.Module):
 
             # Select matched predictions and targets
             pred_boxes_matched = pred_boxes_flat[idx_src]
-            target_boxes_matched = torch.cat([t['boxes'] for t in targets])[idx_tgt]
+            target_boxes_matched = torch.cat([t["boxes"] for t in targets])[idx_tgt]
 
             # L1 loss
-            loss_bbox = F.l1_loss(pred_boxes_matched, target_boxes_matched, reduction='mean')
+            loss_bbox = F.l1_loss(
+                pred_boxes_matched, target_boxes_matched, reduction="mean"
+            )
 
             # GIoU loss
             loss_giou = self.giou_loss(pred_boxes_matched, target_boxes_matched)
@@ -287,11 +295,11 @@ class RTDETRLoss(nn.Module):
             loss_giou = pred_boxes.sum() * 0.0
 
         losses = {
-            'loss_ce': loss_ce,
-            'loss_bbox': loss_bbox * 5.0,  # Weight bbox loss
-            'loss_giou': loss_giou * 2.0,  # Weight GIoU loss
+            "loss_ce": loss_ce,
+            "loss_bbox": loss_bbox * 5.0,  # Weight bbox loss
+            "loss_giou": loss_giou * 2.0,  # Weight GIoU loss
         }
-        losses['loss'] = sum(losses.values())
+        losses["loss"] = sum(losses.values())
 
         return losses
 
@@ -309,7 +317,7 @@ class RTDETRLoss(nn.Module):
         """
         from scipy.optimize import linear_sum_assignment
 
-        B, num_queries = pred_logits.shape[:2]
+        B, _ = pred_logits.shape[:2]
         indices = []
 
         for batch_i in range(B):
@@ -318,31 +326,49 @@ class RTDETRLoss(nn.Module):
             out_bbox = pred_boxes[batch_i]  # (num_queries, 4)
 
             # Get targets for this batch
-            tgt_ids = targets[batch_i]['labels']  # (num_targets,)
-            tgt_bbox = targets[batch_i]['boxes']  # (num_targets, 4)
+            tgt_ids = targets[batch_i]["labels"]  # (num_targets,)
+            tgt_bbox = targets[batch_i]["boxes"]  # (num_targets, 4)
 
             if len(tgt_ids) == 0:
                 # No targets, no matching
-                indices.append((torch.tensor([], dtype=torch.long), torch.tensor([], dtype=torch.long)))
+                indices.append(
+                    (
+                        torch.tensor([], dtype=torch.long),
+                        torch.tensor([], dtype=torch.long),
+                    )
+                )
                 continue
 
             # Classification cost
             cost_class = -out_prob[:, tgt_ids]  # (num_queries, num_targets)
 
             # Bbox L1 cost
-            cost_bbox = torch.cdist(out_bbox, tgt_bbox, p=1)  # (num_queries, num_targets)
+            cost_bbox = torch.cdist(
+                out_bbox, tgt_bbox, p=1
+            )  # (num_queries, num_targets)
 
             # GIoU cost
-            cost_giou = -self.generalized_box_iou(out_bbox, tgt_bbox)  # (num_queries, num_targets)
+            cost_giou = -self.generalized_box_iou(
+                out_bbox, tgt_bbox
+            )  # (num_queries, num_targets)
 
             # Final cost matrix
-            C = self.cost_class * cost_class + self.cost_bbox * cost_bbox + self.cost_giou * cost_giou
+            C = (
+                self.cost_class * cost_class
+                + self.cost_bbox * cost_bbox
+                + self.cost_giou * cost_giou
+            )
             C = C.cpu().detach().numpy()
 
             # Hungarian algorithm
             src_idx, tgt_idx = linear_sum_assignment(C)
 
-            indices.append((torch.as_tensor(src_idx, dtype=torch.long), torch.as_tensor(tgt_idx, dtype=torch.long)))
+            indices.append(
+                (
+                    torch.as_tensor(src_idx, dtype=torch.long),
+                    torch.as_tensor(tgt_idx, dtype=torch.long),
+                )
+            )
 
         return indices
 
@@ -371,8 +397,12 @@ class RTDETRLoss(nn.Module):
         area_c = wh[:, :, 0] * wh[:, :, 1]
 
         # GIoU
-        area1 = (boxes1_xyxy[:, 2] - boxes1_xyxy[:, 0]) * (boxes1_xyxy[:, 3] - boxes1_xyxy[:, 1])
-        area2 = (boxes2_xyxy[:, 2] - boxes2_xyxy[:, 0]) * (boxes2_xyxy[:, 3] - boxes2_xyxy[:, 1])
+        area1 = (boxes1_xyxy[:, 2] - boxes1_xyxy[:, 0]) * (
+            boxes1_xyxy[:, 3] - boxes1_xyxy[:, 1]
+        )
+        area2 = (boxes2_xyxy[:, 2] - boxes2_xyxy[:, 0]) * (
+            boxes2_xyxy[:, 3] - boxes2_xyxy[:, 1]
+        )
         union = area1[:, None] + area2[None, :] - iou * area1[:, None]
 
         giou = iou - (area_c - union) / area_c
@@ -436,8 +466,11 @@ if __name__ == "__main__":
 
     # Test loss
     targets = [
-        {'labels': torch.tensor([0, 0]), 'boxes': torch.tensor([[0.5, 0.5, 0.2, 0.3], [0.3, 0.4, 0.1, 0.2]])},
-        {'labels': torch.tensor([0]), 'boxes': torch.tensor([[0.6, 0.6, 0.15, 0.25]])},
+        {
+            "labels": torch.tensor([0, 0]),
+            "boxes": torch.tensor([[0.5, 0.5, 0.2, 0.3], [0.3, 0.4, 0.1, 0.2]]),
+        },
+        {"labels": torch.tensor([0]), "boxes": torch.tensor([[0.6, 0.6, 0.15, 0.25]])},
     ]
 
     criterion = RTDETRLoss(num_classes=1)
