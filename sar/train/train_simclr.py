@@ -3,7 +3,6 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from pathlib import Path
 from tqdm import tqdm
 import argparse
@@ -12,6 +11,14 @@ from sar.models.vit import ViTTiny
 from sar.models.simclr import SimCLR
 from sar.data.datasets import PretrainDataset
 from sar.augmentation import get_simclr_augmentation, DualViewTransform
+from sar.train.trainer import (
+    get_device,
+    setup_output_dir,
+    build_tensorboard_writer,
+    build_cosine_optimizer,
+    save_checkpoint,
+    log_step_scalars,
+)
 
 
 def train_simclr(
@@ -43,15 +50,9 @@ def train_simclr(
         num_workers: Number of dataloader workers
         save_every: Save checkpoint every N epochs
     """
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {device}")
-
-    # Create output directory
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # TensorBoard
-    writer = SummaryWriter(output_dir / "logs")
+    device = get_device()
+    output_dir = setup_output_dir(output_dir)
+    writer = build_tensorboard_writer(output_dir)
 
     # Dataset and dataloader (dual view transform)
     transform = DualViewTransform(get_simclr_augmentation(img_size))
@@ -90,19 +91,8 @@ def train_simclr(
 
     print(f"Model parameters: {sum(p.numel() for p in simclr.parameters()) / 1e6:.2f}M")
 
-    # Optimizer
-    optimizer = torch.optim.AdamW(
-        simclr.parameters(),
-        lr=lr,
-        betas=(0.9, 0.999),
-        weight_decay=weight_decay
-    )
-
-    # Cosine learning rate schedule
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer,
-        T_max=num_epochs,
-        eta_min=lr * 0.01
+    optimizer, scheduler = build_cosine_optimizer(
+        simclr, lr=lr, weight_decay=weight_decay, num_epochs=num_epochs,
     )
 
     # Training loop
@@ -134,9 +124,10 @@ def train_simclr(
             })
 
             # TensorBoard logging
-            if global_step % 10 == 0:
-                writer.add_scalar('train/loss', loss.item(), global_step)
-                writer.add_scalar('train/lr', optimizer.param_groups[0]['lr'], global_step)
+            log_step_scalars(writer, {
+                'train/loss': loss.item(),
+                'train/lr': optimizer.param_groups[0]['lr'],
+            }, global_step)
 
             # Log sample views
             if global_step % 100 == 0:
@@ -153,16 +144,13 @@ def train_simclr(
 
         # Save checkpoint
         if (epoch + 1) % save_every == 0 or epoch == num_epochs - 1:
-            checkpoint_path = output_dir / f"simclr_epoch_{epoch+1}.pth"
-            torch.save({
-                'epoch': epoch + 1,
-                'model_state_dict': simclr.state_dict(),
-                'encoder_state_dict': simclr.encoder.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict(),
-                'loss': avg_loss,
-            }, checkpoint_path)
-            print(f"Saved checkpoint: {checkpoint_path}")
+            save_checkpoint(
+                output_dir / f"simclr_epoch_{epoch+1}.pth",
+                epoch=epoch + 1, model=simclr,
+                optimizer=optimizer, scheduler=scheduler,
+                encoder_state_dict=simclr.encoder.state_dict(),
+                loss=avg_loss,
+            )
 
     # Save final encoder
     encoder_path = output_dir / "encoder_simclr_final.pth"

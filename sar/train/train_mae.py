@@ -3,7 +3,6 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from pathlib import Path
 from tqdm import tqdm
 import argparse
@@ -12,6 +11,14 @@ from sar.models.vit import ViTTiny
 from sar.models.mae import MAE
 from sar.data.datasets import PretrainDataset
 from sar.augmentation import get_pretrain_augmentation
+from sar.train.trainer import (
+    get_device,
+    setup_output_dir,
+    build_tensorboard_writer,
+    build_cosine_optimizer,
+    save_checkpoint,
+    log_step_scalars,
+)
 
 
 def train_mae(
@@ -41,15 +48,9 @@ def train_mae(
         num_workers: Number of dataloader workers
         save_every: Save checkpoint every N epochs
     """
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {device}")
-
-    # Create output directory
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # TensorBoard
-    writer = SummaryWriter(output_dir / "logs")
+    device = get_device()
+    output_dir = setup_output_dir(output_dir)
+    writer = build_tensorboard_writer(output_dir)
 
     # Dataset and dataloader
     transform = get_pretrain_augmentation(img_size)
@@ -90,19 +91,10 @@ def train_mae(
 
     print(f"Model parameters: {sum(p.numel() for p in mae.parameters()) / 1e6:.2f}M")
 
-    # Optimizer (AdamW with cosine schedule as in MAE paper)
-    optimizer = torch.optim.AdamW(
-        mae.parameters(),
-        lr=lr,
-        betas=(0.9, 0.95),
-        weight_decay=weight_decay
-    )
-
-    # Cosine learning rate schedule
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer,
-        T_max=num_epochs,
-        eta_min=lr * 0.01
+    # MAE paper uses betas=(0.9, 0.95)
+    optimizer, scheduler = build_cosine_optimizer(
+        mae, lr=lr, weight_decay=weight_decay,
+        num_epochs=num_epochs, betas=(0.9, 0.95),
     )
 
     # Training loop
@@ -133,9 +125,10 @@ def train_mae(
             })
 
             # TensorBoard logging
-            if global_step % 10 == 0:
-                writer.add_scalar('train/loss', loss.item(), global_step)
-                writer.add_scalar('train/lr', optimizer.param_groups[0]['lr'], global_step)
+            log_step_scalars(writer, {
+                'train/loss': loss.item(),
+                'train/lr': optimizer.param_groups[0]['lr'],
+            }, global_step)
 
             # Log reconstructions
             if global_step % 100 == 0:
@@ -158,16 +151,13 @@ def train_mae(
 
         # Save checkpoint
         if (epoch + 1) % save_every == 0 or epoch == num_epochs - 1:
-            checkpoint_path = output_dir / f"mae_epoch_{epoch+1}.pth"
-            torch.save({
-                'epoch': epoch + 1,
-                'model_state_dict': mae.state_dict(),
-                'encoder_state_dict': mae.encoder.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict(),
-                'loss': avg_loss,
-            }, checkpoint_path)
-            print(f"Saved checkpoint: {checkpoint_path}")
+            save_checkpoint(
+                output_dir / f"mae_epoch_{epoch+1}.pth",
+                epoch=epoch + 1, model=mae,
+                optimizer=optimizer, scheduler=scheduler,
+                encoder_state_dict=mae.encoder.state_dict(),
+                loss=avg_loss,
+            )
 
     # Save final encoder
     encoder_path = output_dir / "encoder_mae_final.pth"
