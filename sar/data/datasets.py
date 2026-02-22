@@ -24,7 +24,8 @@ class PretrainDataset(Dataset):
 
         # Get all jpg images
         self.image_paths = sorted(self.img_dir.glob("*.jpg"))
-        assert len(self.image_paths) > 0, f"No images found in {img_dir}"
+        if not self.image_paths:
+            raise ValueError(f"No images found in {img_dir}")
 
         print(f"PretrainDataset: Loaded {len(self.image_paths)} images from {img_dir}")
 
@@ -80,12 +81,14 @@ class DetectionDataset(Dataset):
 
         # Get all images
         self.image_paths = sorted(self.img_dir.glob("*.jpg"))
-        assert len(self.image_paths) > 0, f"No images found in {img_dir}"
+        if not self.image_paths:
+            raise ValueError(f"No images found in {img_dir}")
 
         # Verify corresponding labels exist
         for img_path in self.image_paths:
             label_path = self.label_dir / (img_path.stem + ".txt")
-            assert label_path.exists(), f"Missing label for {img_path.name}"
+            if not label_path.exists():
+                raise ValueError(f"Missing label for {img_path.name}")
 
         print(f"DetectionDataset: Loaded {len(self.image_paths)} images from {img_dir}")
 
@@ -191,49 +194,3 @@ def collate_fn_detection(batch):
     return images, targets
 
 
-if __name__ == "__main__":
-    from sar.augmentation import get_pretrain_augmentation, get_detection_train_augmentation, DualViewTransform, get_simclr_augmentation
-
-    # Test PretrainDataset
-    print("Testing PretrainDataset...")
-    pretrain_ds = PretrainDataset(
-        img_dir="Airport_Dataset_v0_images",
-        transform=get_pretrain_augmentation(224)
-    )
-    print(f"Dataset size: {len(pretrain_ds)}")
-    img = pretrain_ds[0]
-    print(f"Image shape: {img.shape}")
-
-    # Test SimCLR dual view
-    print("\nTesting DualViewTransform...")
-    simclr_ds = PretrainDataset(
-        img_dir="Airport_Dataset_v0_images",
-        transform=DualViewTransform(get_simclr_augmentation(224))
-    )
-    view1, view2 = simclr_ds[0]
-    print(f"View1 shape: {view1.shape}, View2 shape: {view2.shape}")
-
-    # Test DetectionDataset
-    print("\nTesting DetectionDataset...")
-    det_ds = DetectionDataset(
-        img_dir="dataset/train/images",
-        label_dir="dataset/train/labels",
-        transform=get_detection_train_augmentation(224),
-        return_dict=True
-    )
-    print(f"Dataset size: {len(det_ds)}")
-    img, target = det_ds[0]
-    print(f"Image shape: {img.shape}")
-    print(f"Num boxes: {len(target['boxes'])}")
-    print(f"Boxes: {target['boxes']}")
-    print(f"Labels: {target['labels']}")
-
-    # Test collate function
-    from torch.utils.data import DataLoader
-    print("\nTesting DataLoader with collate_fn...")
-    loader = DataLoader(det_ds, batch_size=2, collate_fn=collate_fn_detection, shuffle=True)
-    images, targets = next(iter(loader))
-    print(f"Batch images shape: {images.shape}")
-    print(f"Batch targets length: {len(targets)}")
-    for i, t in enumerate(targets):
-        print(f"  Sample {i}: {len(t['boxes'])} boxes")

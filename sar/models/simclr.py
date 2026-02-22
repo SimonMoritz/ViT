@@ -198,21 +198,3 @@ class SimCLR(nn.Module):
         return self.encoder
 
 
-if __name__ == "__main__":
-    from sar.models.vit import ViTTiny
-
-    # Test SimCLR
-    encoder = ViTTiny(img_size=224, use_cls_token=False)
-    simclr = SimCLR(encoder, projection_dim=128, temperature=0.5)
-
-    # Two augmented views of the same batch
-    x1 = torch.randn(4, 3, 224, 224)
-    x2 = torch.randn(4, 3, 224, 224)
-
-    loss, z1, z2 = simclr(x1, x2)
-
-    print(f"Input shape: {x1.shape}")
-    print(f"Projection z1 shape: {z1.shape}")
-    print(f"Projection z2 shape: {z2.shape}")
-    print(f"Loss: {loss.item():.4f}")
-    print(f"SimCLR params: {sum(p.numel() for p in simclr.parameters()) / 1e6:.2f}M")

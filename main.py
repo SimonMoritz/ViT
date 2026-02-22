@@ -1,14 +1,12 @@
 from sar import split_dataset
+from sar.config import DEFAULT_IMG_DIR, DEFAULT_LABEL_DIR, DEFAULT_DATASET_OUTPUT_DIR
 
 
 def main():
     split_dataset(
-        img_dir="Airport_Dataset_v0_images",
-        label_dir="Airport_Dataset_v0_labels",
-        output_dir="dataset",
-        train_ratio=0.7,
-        val_ratio=0.2,
-        test_ratio=0.1,
+        img_dir=DEFAULT_IMG_DIR,
+        label_dir=DEFAULT_LABEL_DIR,
+        output_dir=DEFAULT_DATASET_OUTPUT_DIR,
         seed=42,
     )
 

@@ -266,11 +266,3 @@ class ViTTiny(nn.Module):
         return tokens[:, 0, :]  # First token is CLS
 
 
-if __name__ == "__main__":
-    # Test the model
-    model = ViTTiny(img_size=224, use_cls_token=False)
-    x = torch.randn(2, 3, 224, 224)
-    out = model(x)
-    print(f"Input shape: {x.shape}")
-    print(f"Output shape: {out.shape}")
-    print(f"Number of parameters: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")

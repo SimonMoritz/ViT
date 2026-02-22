@@ -1,12 +1,17 @@
 import streamlit as st
+import torch
 from PIL import Image, ImageDraw
 from pathlib import Path
 
-IMG_DIR = Path("Airport_Dataset_v0_images")
-LBL_DIR = Path("Airport_Dataset_v0_labels")
+from sar.config import DEFAULT_IMG_DIR, DEFAULT_LABEL_DIR
+from sar.utils.boxes import box_cxcywh_to_xyxy
+
+IMG_DIR = Path(DEFAULT_IMG_DIR)
+LBL_DIR = Path(DEFAULT_LABEL_DIR)
 
 images = sorted(IMG_DIR.glob("*.jpg"))
-assert images, "No images found"
+if not images:
+    raise ValueError(f"No images found in {IMG_DIR}")
 
 # ---------------- session state ----------------
 if "idx" not in st.session_state:
@@ -46,14 +51,13 @@ w, h = img.size
 if label_path.exists():
     with open(label_path) as f:
         for line in f:
-            cls, xc, yc, bw, bh = map(float, line.split())
+            parts = list(map(float, line.split()))
+            xc, yc, bw, bh = parts[1], parts[2], parts[3], parts[4]
+            x1, y1, x2, y2 = box_cxcywh_to_xyxy(
+                torch.tensor([xc, yc, bw, bh])
+            ).tolist()
 
-            x1 = (xc - bw / 2) * w
-            y1 = (yc - bh / 2) * h
-            x2 = (xc + bw / 2) * w
-            y2 = (yc + bh / 2) * h
-
-            draw.rectangle([x1, y1, x2, y2], outline="lime", width=3)
+            draw.rectangle([x1 * w, y1 * h, x2 * w, y2 * h], outline="lime", width=3)
 
 st.image(
     img,

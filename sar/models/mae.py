@@ -284,19 +284,3 @@ class MAE(nn.Module):
         return loss, pred_imgs, mask
 
 
-if __name__ == "__main__":
-    from sar.models.vit import ViTTiny
-
-    # Test MAE
-    encoder = ViTTiny(img_size=224, use_cls_token=False)
-    mae = MAE(encoder, mask_ratio=0.75, patch_size=16)
-
-    x = torch.randn(2, 3, 224, 224)
-    loss, pred, mask = mae(x)
-
-    print(f"Input shape: {x.shape}")
-    print(f"Prediction shape: {pred.shape}")
-    print(f"Mask shape: {mask.shape}")
-    print(f"Loss: {loss.item():.4f}")
-    print(f"Masked ratio: {mask.float().mean():.2f}")
-    print(f"MAE params: {sum(p.numel() for p in mae.parameters()) / 1e6:.2f}M")

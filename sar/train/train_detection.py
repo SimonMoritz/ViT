@@ -3,7 +3,6 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from pathlib import Path
 from tqdm import tqdm
 import argparse
@@ -12,6 +11,13 @@ from sar.models.vit import ViTTiny
 from sar.models.rtdetr import RTDETR, RTDETRLoss
 from sar.data.datasets import DetectionDataset, collate_fn_detection
 from sar.augmentation import get_detection_train_augmentation, get_detection_val_augmentation
+from sar.train.trainer import (
+    get_device,
+    setup_output_dir,
+    build_tensorboard_writer,
+    save_checkpoint,
+    log_step_scalars,
+)
 
 
 def train_detection(
@@ -51,15 +57,9 @@ def train_detection(
         freeze_encoder_epochs: Freeze encoder for first N epochs
         save_every: Save checkpoint every N epochs
     """
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {device}")
-
-    # Create output directory
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # TensorBoard
-    writer = SummaryWriter(output_dir / "logs")
+    device = get_device()
+    output_dir = setup_output_dir(output_dir)
+    writer = build_tensorboard_writer(output_dir)
 
     # Datasets
     train_transform = get_detection_train_augmentation(img_size)
@@ -176,12 +176,13 @@ def train_detection(
             })
 
             # TensorBoard logging
-            if global_step % 10 == 0:
-                writer.add_scalar('train/loss', loss.item(), global_step)
-                writer.add_scalar('train/loss_ce', losses['loss_ce'].item(), global_step)
-                writer.add_scalar('train/loss_bbox', losses['loss_bbox'].item(), global_step)
-                writer.add_scalar('train/loss_giou', losses['loss_giou'].item(), global_step)
-                writer.add_scalar('train/lr', optimizer.param_groups[0]['lr'], global_step)
+            log_step_scalars(writer, {
+                'train/loss': loss.item(),
+                'train/loss_ce': losses['loss_ce'].item(),
+                'train/loss_bbox': losses['loss_bbox'].item(),
+                'train/loss_giou': losses['loss_giou'].item(),
+                'train/lr': optimizer.param_groups[0]['lr'],
+            }, global_step)
 
         avg_train_loss = train_loss / len(train_loader)
         print(f"Epoch {epoch+1} - Train Loss: {avg_train_loss:.4f}")
@@ -208,30 +209,24 @@ def train_detection(
         # Save best model
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            best_model_path = output_dir / "best_model.pth"
-            torch.save({
-                'epoch': epoch + 1,
-                'model_state_dict': rtdetr.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'val_loss': avg_val_loss,
-            }, best_model_path)
-            print(f"Saved best model: {best_model_path}")
+            torch.save(
+                {'epoch': epoch + 1, 'model_state_dict': rtdetr.state_dict(),
+                 'optimizer_state_dict': optimizer.state_dict(), 'val_loss': avg_val_loss},
+                output_dir / "best_model.pth",
+            )
+            print(f"Saved best model: {output_dir / 'best_model.pth'}")
 
         # Learning rate schedule
         scheduler.step()
 
         # Save checkpoint
         if (epoch + 1) % save_every == 0 or epoch == num_epochs - 1:
-            checkpoint_path = output_dir / f"checkpoint_epoch_{epoch+1}.pth"
-            torch.save({
-                'epoch': epoch + 1,
-                'model_state_dict': rtdetr.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict(),
-                'train_loss': avg_train_loss,
-                'val_loss': avg_val_loss,
-            }, checkpoint_path)
-            print(f"Saved checkpoint: {checkpoint_path}")
+            save_checkpoint(
+                output_dir / f"checkpoint_epoch_{epoch+1}.pth",
+                epoch=epoch + 1, model=rtdetr,
+                optimizer=optimizer, scheduler=scheduler,
+                train_loss=avg_train_loss, val_loss=avg_val_loss,
+            )
 
     writer.close()
     print("Detection training complete!")
