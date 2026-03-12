@@ -2,7 +2,6 @@
 
 import torch
 import torch.nn as nn
-import math
 
 
 class PatchEmbedding(nn.Module):
@@ -16,10 +15,7 @@ class PatchEmbedding(nn.Module):
 
         # Convolutional projection
         self.proj = nn.Conv2d(
-            in_channels,
-            embed_dim,
-            kernel_size=patch_size,
-            stride=patch_size
+            in_channels, embed_dim, kernel_size=patch_size, stride=patch_size
         )
 
     def forward(self, x):
@@ -65,13 +61,13 @@ class MultiHeadSelfAttention(nn.Module):
         q, k, v = qkv[0], qkv[1], qkv[2]
 
         # Scaled dot-product attention
-        scale = self.head_dim ** -0.5
+        scale = self.head_dim**-0.5
         attn = (q @ k.transpose(-2, -1)) * scale  # (B, H, N, N)
         attn = attn.softmax(dim=-1)
         attn = self.dropout(attn)
 
         # Apply attention to values
-        x = (attn @ v)  # (B, H, N, D_h)
+        x = attn @ v  # (B, H, N, D_h)
         x = x.transpose(1, 2)  # (B, N, H, D_h)
         x = x.reshape(B, N, D)  # (B, N, D)
 
@@ -150,9 +146,7 @@ class ViTTiny(nn.Module):
         self.use_cls_token = use_cls_token
 
         # Patch embedding
-        self.patch_embed = PatchEmbedding(
-            img_size, patch_size, in_channels, embed_dim
-        )
+        self.patch_embed = PatchEmbedding(img_size, patch_size, in_channels, embed_dim)
         n_patches = self.patch_embed.n_patches
 
         # CLS token (optional, useful for classification tasks)
@@ -168,10 +162,12 @@ class ViTTiny(nn.Module):
         self.pos_drop = nn.Dropout(dropout)
 
         # Transformer blocks
-        self.blocks = nn.ModuleList([
-            TransformerBlock(embed_dim, n_heads, mlp_ratio, dropout)
-            for _ in range(depth)
-        ])
+        self.blocks = nn.ModuleList(
+            [
+                TransformerBlock(embed_dim, n_heads, mlp_ratio, dropout)
+                for _ in range(depth)
+            ]
+        )
 
         # Final norm
         self.norm = nn.LayerNorm(embed_dim)
@@ -200,7 +196,7 @@ class ViTTiny(nn.Module):
             nn.init.constant_(m.weight, 1.0)
         elif isinstance(m, nn.Conv2d):
             # Kaiming initialization for conv layers
-            nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
 
@@ -273,4 +269,6 @@ if __name__ == "__main__":
     out = model(x)
     print(f"Input shape: {x.shape}")
     print(f"Output shape: {out.shape}")
-    print(f"Number of parameters: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")
+    print(
+        f"Number of parameters: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M"
+    )

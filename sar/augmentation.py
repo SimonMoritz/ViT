@@ -2,7 +2,6 @@
 
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
-import numpy as np
 
 
 def get_pretrain_augmentation(img_size=224):
@@ -19,61 +18,62 @@ def get_pretrain_augmentation(img_size=224):
     Returns:
         Albumentations transform
     """
-    return A.Compose([
-        # Resize and crop
-        A.Resize(int(img_size * 1.1), int(img_size * 1.1)),
-        A.RandomCrop(img_size, img_size),
-
-        # Geometric augmentations
-        A.HorizontalFlip(p=0.5),
-        A.VerticalFlip(p=0.5),
-        A.RandomRotate90(p=0.5),
-        A.Affine(
-            scale=(0.8, 1.2),
-            translate_percent=(-0.1, 0.1),
-            rotate=(-45, 45),
-            shear=(-10, 10),
-            p=0.7
-        ),
-
-        # Elastic/Grid distortions
-        A.OneOf([
-            A.ElasticTransform(alpha=120, sigma=120 * 0.05, p=1.0),
-            A.GridDistortion(num_steps=5, distort_limit=0.3, p=1.0),
-            A.OpticalDistortion(distort_limit=0.2, p=1.0),
-        ], p=0.3),
-
-        # Intensity augmentations
-        A.RandomBrightnessContrast(
-            brightness_limit=0.3,
-            contrast_limit=0.3,
-            p=0.7
-        ),
-        A.OneOf([
-            A.MotionBlur(blur_limit=5, p=1.0),
-            A.GaussianBlur(blur_limit=5, p=1.0),
-            A.MedianBlur(blur_limit=5, p=1.0),
-        ], p=0.3),
-
-        # Noise
-        A.OneOf([
-            A.GaussNoise(p=1.0),
-            A.MultiplicativeNoise(multiplier=(0.9, 1.1), p=1.0),
-        ], p=0.3),
-
-        # Coarse dropout (similar to cutout)
-        A.CoarseDropout(
-            num_holes_range=(4, 8),
-            hole_height_range=(int(img_size * 0.05), int(img_size * 0.1)),
-            hole_width_range=(int(img_size * 0.05), int(img_size * 0.1)),
-            fill_value=0,
-            p=0.3
-        ),
-
-        # Normalize (assuming grayscale or RGB with similar statistics)
-        A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-        ToTensorV2(),
-    ])
+    return A.Compose(
+        [
+            # Resize and crop
+            A.Resize(int(img_size * 1.1), int(img_size * 1.1)),
+            A.RandomCrop(img_size, img_size),
+            # Geometric augmentations
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.5),
+            A.RandomRotate90(p=0.5),
+            A.Affine(
+                scale=(0.8, 1.2),
+                translate_percent=(-0.1, 0.1),
+                rotate=(-45, 45),
+                shear=(-10, 10),
+                p=0.7,
+            ),
+            # Elastic/Grid distortions
+            A.OneOf(
+                [
+                    A.ElasticTransform(alpha=120, sigma=120 * 0.05, p=1.0),
+                    A.GridDistortion(num_steps=5, distort_limit=0.3, p=1.0),
+                    A.OpticalDistortion(distort_limit=0.2, p=1.0),
+                ],
+                p=0.3,
+            ),
+            # Intensity augmentations
+            A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.7),
+            A.OneOf(
+                [
+                    A.MotionBlur(blur_limit=5, p=1.0),
+                    A.GaussianBlur(blur_limit=5, p=1.0),
+                    A.MedianBlur(blur_limit=5, p=1.0),
+                ],
+                p=0.3,
+            ),
+            # Noise
+            A.OneOf(
+                [
+                    A.GaussNoise(p=1.0),
+                    A.MultiplicativeNoise(multiplier=(0.9, 1.1), p=1.0),
+                ],
+                p=0.3,
+            ),
+            # Coarse dropout (similar to cutout)
+            A.CoarseDropout(
+                num_holes_range=(4, 8),
+                hole_height_range=(int(img_size * 0.05), int(img_size * 0.1)),
+                hole_width_range=(int(img_size * 0.05), int(img_size * 0.1)),
+                fill_value=0,
+                p=0.3,
+            ),
+            # Normalize (assuming grayscale or RGB with similar statistics)
+            A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ToTensorV2(),
+        ]
+    )
 
 
 def get_simclr_augmentation(img_size=224):
@@ -87,41 +87,32 @@ def get_simclr_augmentation(img_size=224):
         Albumentations transform
     """
     # Similar to pretrain augmentation but potentially stronger
-    return A.Compose([
-        A.Resize(int(img_size * 1.2), int(img_size * 1.2)),
-        A.RandomResizedCrop(
-            img_size, img_size,
-            scale=(0.6, 1.0),
-            ratio=(0.75, 1.33),
-            p=1.0
-        ),
-
-        A.HorizontalFlip(p=0.5),
-        A.VerticalFlip(p=0.5),
-        A.RandomRotate90(p=0.5),
-
-        # Color jitter (works for SAR too, treating as intensity variations)
-        A.ColorJitter(
-            brightness=0.4,
-            contrast=0.4,
-            saturation=0.2,
-            hue=0.1,
-            p=0.8
-        ),
-
-        # Blur
-        A.OneOf([
-            A.GaussianBlur(blur_limit=(3, 7), p=1.0),
-            A.MotionBlur(blur_limit=7, p=1.0),
-        ], p=0.5),
-
-        # Noise
-        A.GaussNoise(p=0.3),
-
-        # Normalize
-        A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-        ToTensorV2(),
-    ])
+    return A.Compose(
+        [
+            A.Resize(int(img_size * 1.2), int(img_size * 1.2)),
+            A.RandomResizedCrop(
+                img_size, img_size, scale=(0.6, 1.0), ratio=(0.75, 1.33), p=1.0
+            ),
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.5),
+            A.RandomRotate90(p=0.5),
+            # Color jitter (works for SAR too, treating as intensity variations)
+            A.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1, p=0.8),
+            # Blur
+            A.OneOf(
+                [
+                    A.GaussianBlur(blur_limit=(3, 7), p=1.0),
+                    A.MotionBlur(blur_limit=7, p=1.0),
+                ],
+                p=0.5,
+            ),
+            # Noise
+            A.GaussNoise(p=0.3),
+            # Normalize
+            A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ToTensorV2(),
+        ]
+    )
 
 
 def get_detection_train_augmentation(img_size=224):
@@ -133,52 +124,44 @@ def get_detection_train_augmentation(img_size=224):
     Returns:
         Albumentations transform with bbox support
     """
-    return A.Compose([
-        A.Resize(img_size, img_size),
-
-        # Geometric augmentations (bbox-safe)
-        A.HorizontalFlip(p=0.5),
-        A.VerticalFlip(p=0.5),
-        A.RandomRotate90(p=0.5),
-
-        A.Affine(
-            scale=(0.8, 1.2),
-            translate_percent=(-0.1, 0.1),
-            rotate=(-30, 30),
-            shear=(-5, 5),
-            p=0.7
+    return A.Compose(
+        [
+            A.Resize(img_size, img_size),
+            # Geometric augmentations (bbox-safe)
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.5),
+            A.RandomRotate90(p=0.5),
+            A.Affine(
+                scale=(0.8, 1.2),
+                translate_percent=(-0.1, 0.1),
+                rotate=(-30, 30),
+                shear=(-5, 5),
+                p=0.7,
+            ),
+            # Random crop/scale (bbox-safe)
+            A.RandomSizedBBoxSafeCrop(
+                height=img_size, width=img_size, erosion_rate=0.2, p=0.5
+            ),
+            # Intensity augmentations
+            A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.7),
+            A.OneOf(
+                [
+                    A.MotionBlur(blur_limit=5, p=1.0),
+                    A.GaussianBlur(blur_limit=5, p=1.0),
+                ],
+                p=0.3,
+            ),
+            A.GaussNoise(p=0.3),
+            # Normalize
+            A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ToTensorV2(),
+        ],
+        bbox_params=A.BboxParams(
+            format="yolo",  # Normalized (cx, cy, w, h)
+            label_fields=["class_labels"],
+            min_visibility=0.3,  # Keep boxes with at least 30% visible
         ),
-
-        # Random crop/scale (bbox-safe)
-        A.RandomSizedBBoxSafeCrop(
-            height=img_size,
-            width=img_size,
-            erosion_rate=0.2,
-            p=0.5
-        ),
-
-        # Intensity augmentations
-        A.RandomBrightnessContrast(
-            brightness_limit=0.3,
-            contrast_limit=0.3,
-            p=0.7
-        ),
-
-        A.OneOf([
-            A.MotionBlur(blur_limit=5, p=1.0),
-            A.GaussianBlur(blur_limit=5, p=1.0),
-        ], p=0.3),
-
-        A.GaussNoise(p=0.3),
-
-        # Normalize
-        A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-        ToTensorV2(),
-    ], bbox_params=A.BboxParams(
-        format='yolo',  # Normalized (cx, cy, w, h)
-        label_fields=['class_labels'],
-        min_visibility=0.3,  # Keep boxes with at least 30% visible
-    ))
+    )
 
 
 def get_detection_val_augmentation(img_size=224):
@@ -190,14 +173,17 @@ def get_detection_val_augmentation(img_size=224):
     Returns:
         Albumentations transform
     """
-    return A.Compose([
-        A.Resize(img_size, img_size),
-        A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-        ToTensorV2(),
-    ], bbox_params=A.BboxParams(
-        format='yolo',
-        label_fields=['class_labels'],
-    ))
+    return A.Compose(
+        [
+            A.Resize(img_size, img_size),
+            A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ToTensorV2(),
+        ],
+        bbox_params=A.BboxParams(
+            format="yolo",
+            label_fields=["class_labels"],
+        ),
+    )
 
 
 class DualViewTransform:
@@ -220,8 +206,8 @@ class DualViewTransform:
         Returns:
             view1, view2: Two augmented views of the image
         """
-        view1 = self.transform(image=image)['image']
-        view2 = self.transform(image=image)['image']
+        view1 = self.transform(image=image)["image"]
+        view2 = self.transform(image=image)["image"]
         return view1, view2
 
 
@@ -241,7 +227,7 @@ if __name__ == "__main__":
 
         # Test pretrain augmentation
         aug = get_pretrain_augmentation(224)
-        augmented = aug(image=img)['image']
+        augmented = aug(image=img)["image"]
         print(f"Augmented shape: {augmented.shape}")
 
         # Test dual view
