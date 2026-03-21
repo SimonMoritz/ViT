@@ -78,7 +78,7 @@ Python **3.13** is required (enforced via `.python-version`).
 | streamlit 1.52.1 | Annotation viewer |
 | tensorboard 2.20.0 | Training monitoring |
 | ruff | Linting |
-| mypy | Type checking |
+| ty | Type checking (replaces mypy) |
 
 ---
 
@@ -218,10 +218,66 @@ class_id cx cy w h
 
 ### Style
 
-- **Linting**: ruff (`uv run ruff check .`)
-- **Type checking**: mypy (`uv run mypy sar/`)
+- **Linting**: ruff (`uv run ruff check .` / `uv run ruff format .`)
+- **Type checking**: ty (`uv run ty check sar/`)
 - **Docstrings**: Present on all public functions (Args / Returns format)
 - **Type hints**: Used throughout, especially in function signatures
+
+### Linting & Type Checking
+
+This project uses **ruff** for linting/formatting and **ty** (by Astral) for type checking. Both are configured in `pyproject.toml`.
+
+#### ruff
+
+```bash
+# Check for lint errors
+uv run ruff check .
+
+# Auto-fix fixable lint errors
+uv run ruff check . --fix
+
+# Format code
+uv run ruff format .
+
+# Check formatting without writing
+uv run ruff format . --check
+```
+
+Configuration lives under `[tool.ruff]` and `[tool.ruff.lint]` in `pyproject.toml`:
+- Line length: 100
+- Target: Python 3.13
+- Enabled rule sets: `E`, `F`, `W` (pycodestyle/pyflakes errors), `I` (isort), `UP` (pyupgrade)
+
+#### ty
+
+`ty` is Astral's extremely fast Python type checker (written in Rust), replacing mypy. It is 10–60× faster than mypy and includes a full LSP for editor integration.
+
+```bash
+# Type-check the entire package
+uv run ty check sar/
+
+# Check a specific file
+uv run ty check sar/models/vit.py
+
+# Explain a specific diagnostic rule
+uv run ty explain rule <rule-name>
+
+# Run without installing (one-off)
+uvx ty check sar/
+```
+
+Configuration lives under `[tool.ty]` in `pyproject.toml`. Python version is inferred automatically from `requires-python = ">=3.13"`.
+
+To suppress a specific diagnostic inline:
+```python
+x: int = some_func()  # type: ignore[assignment]
+```
+
+Rule levels can be set per-rule:
+```toml
+[tool.ty.rules]
+possibly-missing-import = "warn"   # or "error" | "ignore"
+```
 
 ### Patterns to Follow
 
