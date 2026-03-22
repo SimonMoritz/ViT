@@ -1,5 +1,7 @@
 """Masked Autoencoder (MAE) for self-supervised pretraining before supervied training."""
 
+from typing import cast
+
 import torch
 import torch.nn as nn
 
@@ -28,7 +30,7 @@ class MAEDecoder(nn.Module):
         self.mask_token = nn.Parameter(torch.zeros(1, 1, decoder_embed_dim))
 
         # Decoder position embeddings (will be initialized based on input size)
-        self.decoder_pos_embed = None
+        self.decoder_pos_embed: nn.Parameter | None = None
 
         # Transformer decoder blocks
         from sar.models.vit import TransformerBlock
@@ -106,7 +108,7 @@ class MAEDecoder(nn.Module):
             x_full[i, masked_pos] = mask_tokens[i, : len(masked_pos)]
 
         # Add positional embeddings
-        x_full = x_full + self.decoder_pos_embed
+        x_full = x_full + cast(nn.Parameter, self.decoder_pos_embed)
 
         # Decoder blocks
         for block in self.decoder_blocks:

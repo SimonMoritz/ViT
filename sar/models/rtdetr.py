@@ -1,14 +1,19 @@
 """RT-DETR: Real-Time Detection Transformer head."""
 
+from typing import Any
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import Tensor
+
+from sar.data.datasets import TensorDict
 
 
 class MLP(nn.Module):
     """Simple MLP."""
 
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers):
+    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int, num_layers: int) -> None:
         super().__init__()
         self.num_layers = num_layers
         h = [hidden_dim] * (num_layers - 1)
@@ -16,7 +21,7 @@ class MLP(nn.Module):
             nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim])
         )
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         for i, layer in enumerate(self.layers):
             x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
         return x
@@ -25,7 +30,7 @@ class MLP(nn.Module):
 class TransformerDecoderLayer(nn.Module):
     """Transformer decoder layer for DETR."""
 
-    def __init__(self, d_model=256, nhead=8, dim_feedforward=1024, dropout=0.1):
+    def __init__(self, d_model: int = 256, nhead: int = 8, dim_feedforward: int = 1024, dropout: float = 0.1) -> None:
         super().__init__()
 
         # Self-attention
@@ -52,7 +57,13 @@ class TransformerDecoderLayer(nn.Module):
         self.dropout2 = nn.Dropout(dropout)
         self.dropout3 = nn.Dropout(dropout)
 
-    def forward(self, tgt, memory, tgt_mask=None, memory_mask=None):
+    def forward(
+        self,
+        tgt: Tensor,
+        memory: Tensor,
+        tgt_mask: Tensor | None = None,
+        memory_mask: Tensor | None = None,
+    ) -> Tensor:
         """
         Args:
             tgt: (B, num_queries, d_model) - query embeddings
@@ -89,15 +100,15 @@ class RTDETR(nn.Module):
 
     def __init__(
         self,
-        encoder,
-        num_classes=1,  # Single class: airport
-        num_queries=100,
-        hidden_dim=256,
-        nheads=8,
-        num_decoder_layers=6,
-        dim_feedforward=1024,
-        dropout=0.1,
-    ):
+        encoder: Any,
+        num_classes: int = 1,  # Single class: airport
+        num_queries: int = 100,
+        hidden_dim: int = 256,
+        nheads: int = 8,
+        num_decoder_layers: int = 6,
+        dim_feedforward: int = 1024,
+        dropout: float = 0.1,
+    ) -> None:
         """
         Args:
             encoder: ViT encoder
@@ -135,13 +146,13 @@ class RTDETR(nn.Module):
 
         self._reset_parameters()
 
-    def _reset_parameters(self):
+    def _reset_parameters(self) -> None:
         """Initialize parameters."""
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
         """
         Forward pass for detection.
 
@@ -183,7 +194,7 @@ class RTDETR(nn.Module):
 
         return pred_logits, pred_boxes
 
-    def get_encoder(self):
+    def get_encoder(self) -> Any:
         """Return the encoder."""
         return self.encoder
 
@@ -196,7 +207,7 @@ class RTDETRLoss(nn.Module):
     then computes classification and box regression losses.
     """
 
-    def __init__(self, num_classes=1, cost_class=1.0, cost_bbox=5.0, cost_giou=2.0):
+    def __init__(self, num_classes: int = 1, cost_class: float = 1.0, cost_bbox: float = 5.0, cost_giou: float = 2.0) -> None:
         """
         Args:
             num_classes: Number of classes (excluding background)
@@ -210,7 +221,7 @@ class RTDETRLoss(nn.Module):
         self.cost_bbox = cost_bbox
         self.cost_giou = cost_giou
 
-    def forward(self, pred_logits, pred_boxes, targets):
+    def forward(self, pred_logits: Tensor, pred_boxes: Tensor, targets: list[TensorDict]) -> dict[str, Tensor]:
         """
         Args:
             pred_logits: (B, num_queries, num_classes+1)
@@ -228,26 +239,24 @@ class RTDETRLoss(nn.Module):
         pred_boxes_flat = pred_boxes.flatten(0, 1)  # (B*num_queries, 4)
 
         # Concatenate all targets
-        target_labels = []
-        target_boxes = []
+        target_label_list: list[Tensor] = []
+        target_box_list: list[Tensor] = []
         batch_idx = []
         for i, t in enumerate(targets):
-            target_labels.append(t["labels"])
-            target_boxes.append(t["boxes"])
+            target_label_list.append(t["labels"])
+            target_box_list.append(t["boxes"])
             batch_idx.extend([i] * len(t["labels"]))
 
-        if len(target_labels) == 0:
+        if len(target_label_list) == 0:
             # No targets in batch
             losses = {
                 "loss_ce": pred_logits.sum() * 0.0,  # Dummy loss
                 "loss_bbox": pred_boxes.sum() * 0.0,
                 "loss_giou": pred_boxes.sum() * 0.0,
             }
-            losses["loss"] = sum(losses.values())
+            losses["loss"] = losses["loss_ce"] + losses["loss_bbox"] + losses["loss_giou"]
             return losses
 
-        target_labels = torch.cat(target_labels).to(device)
-        target_boxes = torch.cat(target_boxes).to(device)
         batch_idx = torch.tensor(batch_idx, device=device)
 
         # Hungarian matching
@@ -299,11 +308,16 @@ class RTDETRLoss(nn.Module):
             "loss_bbox": loss_bbox * 5.0,  # Weight bbox loss
             "loss_giou": loss_giou * 2.0,  # Weight GIoU loss
         }
-        losses["loss"] = sum(losses.values())
+        losses["loss"] = losses["loss_ce"] + losses["loss_bbox"] + losses["loss_giou"]
 
         return losses
 
-    def hungarian_matching(self, pred_logits, pred_boxes, targets):
+    def hungarian_matching(
+        self,
+        pred_logits: Tensor,
+        pred_boxes: Tensor,
+        targets: list[TensorDict],
+    ) -> list[tuple[Tensor, Tensor]]:
         """
         Perform Hungarian matching between predictions and targets.
 
@@ -318,7 +332,7 @@ class RTDETRLoss(nn.Module):
         from scipy.optimize import linear_sum_assignment
 
         B, _ = pred_logits.shape[:2]
-        indices = []
+        indices: list[tuple[Tensor, Tensor]] = []
 
         for batch_i in range(B):
             # Get predictions for this batch
@@ -372,7 +386,7 @@ class RTDETRLoss(nn.Module):
 
         return indices
 
-    def generalized_box_iou(self, boxes1, boxes2):
+    def generalized_box_iou(self, boxes1: Tensor, boxes2: Tensor) -> Tensor:
         """
         Compute generalized IoU between two sets of boxes.
         Boxes are in (cx, cy, w, h) format, normalized.
@@ -409,7 +423,7 @@ class RTDETRLoss(nn.Module):
 
         return giou
 
-    def box_iou(self, boxes1, boxes2):
+    def box_iou(self, boxes1: Tensor, boxes2: Tensor) -> Tensor:
         """
         Compute IoU between two sets of boxes (x1, y1, x2, y2).
 
@@ -433,7 +447,7 @@ class RTDETRLoss(nn.Module):
         iou = inter / union.clamp(min=1e-6)
         return iou
 
-    def box_cxcywh_to_xyxy(self, boxes):
+    def box_cxcywh_to_xyxy(self, boxes: Tensor) -> Tensor:
         """Convert boxes from (cx, cy, w, h) to (x1, y1, x2, y2)."""
         cx, cy, w, h = boxes.unbind(-1)
         x1 = cx - 0.5 * w
@@ -442,7 +456,7 @@ class RTDETRLoss(nn.Module):
         y2 = cy + 0.5 * h
         return torch.stack([x1, y1, x2, y2], dim=-1)
 
-    def giou_loss(self, pred_boxes, target_boxes):
+    def giou_loss(self, pred_boxes: Tensor, target_boxes: Tensor) -> Tensor:
         """Compute GIoU loss for matched boxes."""
         giou = torch.diagonal(self.generalized_box_iou(pred_boxes, target_boxes))
         loss = 1 - giou

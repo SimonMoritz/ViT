@@ -1,36 +1,36 @@
 """Training script for RT-DETR object detection."""
 
+import argparse
+from pathlib import Path
+
 import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from pathlib import Path
 from tqdm import tqdm
-import argparse
 
 from sar.models.vit import ViTTiny
 from sar.models.rtdetr import RTDETR, RTDETRLoss
-from sar.data.datasets import DetectionDataset, collate_fn_detection
+from sar.data.datasets import DetectionDataset, TensorDict, collate_fn_detection
 from sar.augmentation import get_detection_train_augmentation, get_detection_val_augmentation
 
 
 def train_detection(
-    train_img_dir="dataset/train/images",
-    train_label_dir="dataset/train/labels",
-    val_img_dir="dataset/val/images",
-    val_label_dir="dataset/val/labels",
-    output_dir="checkpoints/detection",
-    encoder_pretrain_path=None,  # Path to pretrained encoder (MAE or SimCLR)
-    img_size=224,
-    batch_size=8,
-    num_epochs=100,
-    lr=1e-4,
-    weight_decay=1e-4,
-    num_queries=100,
-    num_workers=4,
-    freeze_encoder_epochs=0,  # Freeze encoder for first N epochs
-    save_every=10,
-):
+    train_img_dir: str | Path = "dataset/train/images",
+    train_label_dir: str | Path = "dataset/train/labels",
+    val_img_dir: str | Path = "dataset/val/images",
+    val_label_dir: str | Path = "dataset/val/labels",
+    output_dir: str | Path = "checkpoints/detection",
+    encoder_pretrain_path: str | Path | None = None,  # Path to pretrained encoder (MAE or SimCLR)
+    img_size: int = 224,
+    batch_size: int = 8,
+    num_epochs: int = 100,
+    lr: float = 1e-4,
+    weight_decay: float = 1e-4,
+    num_queries: int = 100,
+    num_workers: int = 4,
+    freeze_encoder_epochs: int = 0,  # Freeze encoder for first N epochs
+    save_every: int = 10,
+) -> None:
     """
     Train RT-DETR for object detection.
 
@@ -148,13 +148,16 @@ def train_detection(
         train_loss = 0.0
         pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs} [Train]")
 
-        for batch_idx, (images, targets) in enumerate(pbar):
+        for _batch_idx, (images, targets) in enumerate(pbar):
             images = images.to(device)
-            targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+            typed_targets: list[TensorDict] = [
+                {k: v.to(device) for k, v in t.items()}
+                for t in targets
+            ]
 
             # Forward pass
             pred_logits, pred_boxes = rtdetr(images)
-            losses = criterion(pred_logits, pred_boxes, targets)
+            losses = criterion(pred_logits, pred_boxes, typed_targets)
 
             loss = losses['loss']
 
@@ -193,10 +196,13 @@ def train_detection(
         with torch.no_grad():
             for images, targets in tqdm(val_loader, desc=f"Epoch {epoch+1}/{num_epochs} [Val]"):
                 images = images.to(device)
-                targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+                typed_targets: list[TensorDict] = [
+                    {k: v.to(device) for k, v in t.items()}
+                    for t in targets
+                ]
 
                 pred_logits, pred_boxes = rtdetr(images)
-                losses = criterion(pred_logits, pred_boxes, targets)
+                losses = criterion(pred_logits, pred_boxes, typed_targets)
 
                 val_loss += losses['loss'].item()
 
@@ -237,7 +243,7 @@ def train_detection(
     print("Detection training complete!")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description='Train RT-DETR for object detection')
     parser.add_argument('--train_img_dir', type=str, default='dataset/train/images')
     parser.add_argument('--train_label_dir', type=str, default='dataset/train/labels')

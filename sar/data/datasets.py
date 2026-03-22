@@ -1,19 +1,29 @@
 """Dataset classes for SAR airport detection."""
 
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any, cast
+
+import numpy as np
+from PIL import Image
 import torch
 from torch.utils.data import Dataset
-from pathlib import Path
-from PIL import Image
-import numpy as np
 
 
-class PretrainDataset(Dataset):
+Transform = Callable[..., Any]
+TensorDict = dict[str, torch.Tensor]
+DetectionTuple = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+DetectionSample = tuple[torch.Tensor, TensorDict]
+PretrainSample = torch.Tensor | tuple[torch.Tensor, torch.Tensor]
+
+
+class PretrainDataset(Dataset[PretrainSample]):
     """
     Dataset for self-supervised pretraining (MAE/SimCLR).
     Loads all images without labels.
     """
 
-    def __init__(self, img_dir, transform=None):
+    def __init__(self, img_dir: str | Path, transform: Transform | None = None) -> None:
         """
         Args:
             img_dir: Directory containing images (can be str or Path)
@@ -28,10 +38,10 @@ class PretrainDataset(Dataset):
 
         print(f"PretrainDataset: Loaded {len(self.image_paths)} images from {img_dir}")
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.image_paths)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, index) -> PretrainSample:
         """
         Args:
             idx: Index
@@ -39,7 +49,7 @@ class PretrainDataset(Dataset):
             If transform is DualViewTransform: (view1, view2)
             Otherwise: image tensor
         """
-        img_path = self.image_paths[idx]
+        img_path = self.image_paths[index]
 
         # Load image
         image = Image.open(img_path).convert('RGB')
@@ -55,17 +65,25 @@ class PretrainDataset(Dataset):
             else:
                 # Regular transform
                 image = self.transform(image=image)['image']
+        else:
+            image = torch.from_numpy(image).permute(2, 0, 1).float() / 255.0
 
         return image
 
 
-class DetectionDataset(Dataset):
+class DetectionDataset(Dataset[DetectionSample | DetectionTuple]):
     """
     Dataset for object detection training.
     Loads images with corresponding bounding box annotations.
     """
 
-    def __init__(self, img_dir, label_dir, transform=None, return_dict=False):
+    def __init__(
+        self,
+        img_dir: str | Path,
+        label_dir: str | Path,
+        transform: Transform | None = None,
+        return_dict: bool = False,
+    ) -> None:
         """
         Args:
             img_dir: Directory containing images
@@ -89,10 +107,10 @@ class DetectionDataset(Dataset):
 
         print(f"DetectionDataset: Loaded {len(self.image_paths)} images from {img_dir}")
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.image_paths)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, index) -> DetectionSample | DetectionTuple:
         """
         Args:
             idx: Index
@@ -105,7 +123,7 @@ class DetectionDataset(Dataset):
                 boxes: (N, 4) tensor in YOLO format (cx, cy, w, h)
                 labels: (N,) tensor of class labels
         """
-        img_path = self.image_paths[idx]
+        img_path = self.image_paths[index]
         label_path = self.label_dir / (img_path.stem + ".txt")
 
         # Load image
@@ -161,7 +179,7 @@ class DetectionDataset(Dataset):
             return image, boxes, labels
 
 
-def collate_fn_detection(batch):
+def collate_fn_detection(batch: list[DetectionSample | DetectionTuple]) -> tuple[torch.Tensor, list[TensorDict]]:
     """
     Custom collate function for detection dataset.
     Handles variable number of boxes per image.
@@ -178,12 +196,12 @@ def collate_fn_detection(batch):
     for item in batch:
         if len(item) == 2:
             # Dict format
-            image, target = item
+            image, target = cast(DetectionSample, item)
             images.append(image)
             targets.append(target)
         else:
             # Tuple format
-            image, boxes, labels = item
+            image, boxes, labels = cast(DetectionTuple, item)
             images.append(image)
             targets.append({'labels': labels, 'boxes': boxes})
 
@@ -202,6 +220,7 @@ if __name__ == "__main__":
     )
     print(f"Dataset size: {len(pretrain_ds)}")
     img = pretrain_ds[0]
+    assert isinstance(img, torch.Tensor)
     print(f"Image shape: {img.shape}")
 
     # Test SimCLR dual view
@@ -222,7 +241,7 @@ if __name__ == "__main__":
         return_dict=True
     )
     print(f"Dataset size: {len(det_ds)}")
-    img, target = det_ds[0]
+    img, target = cast(DetectionSample, det_ds[0])
     print(f"Image shape: {img.shape}")
     print(f"Num boxes: {len(target['boxes'])}")
     print(f"Boxes: {target['boxes']}")

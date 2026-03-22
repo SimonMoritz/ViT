@@ -1,10 +1,13 @@
 """Heavy augmentation pipeline for SAR images."""
 
+from collections.abc import Callable
+from typing import Any
+
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
 
-def get_pretrain_augmentation(img_size=224):
+def get_pretrain_augmentation(img_size: int = 224) -> A.Compose:
     """
     Heavy augmentation for self-supervised pretraining (MAE/SimCLR).
 
@@ -76,7 +79,7 @@ def get_pretrain_augmentation(img_size=224):
     )
 
 
-def get_simclr_augmentation(img_size=224):
+def get_simclr_augmentation(img_size: int = 224) -> A.Compose:
     """
     Two-view augmentation for SimCLR.
     Returns a transform that creates two augmented views of the same image.
@@ -90,9 +93,7 @@ def get_simclr_augmentation(img_size=224):
     return A.Compose(
         [
             A.Resize(int(img_size * 1.2), int(img_size * 1.2)),
-            A.RandomResizedCrop(
-                img_size, img_size, scale=(0.6, 1.0), ratio=(0.75, 1.33), p=1.0
-            ),
+            A.RandomResizedCrop(img_size, img_size, scale=(0.6, 1.0), ratio=(0.75, 1.33), p=1.0),
             A.HorizontalFlip(p=0.5),
             A.VerticalFlip(p=0.5),
             A.RandomRotate90(p=0.5),
@@ -115,7 +116,7 @@ def get_simclr_augmentation(img_size=224):
     )
 
 
-def get_detection_train_augmentation(img_size=224):
+def get_detection_train_augmentation(img_size: int = 224) -> A.Compose:
     """
     Augmentation for detection training (with bounding boxes).
 
@@ -139,9 +140,7 @@ def get_detection_train_augmentation(img_size=224):
                 p=0.7,
             ),
             # Random crop/scale (bbox-safe)
-            A.RandomSizedBBoxSafeCrop(
-                height=img_size, width=img_size, erosion_rate=0.2, p=0.5
-            ),
+            A.RandomSizedBBoxSafeCrop(height=img_size, width=img_size, erosion_rate=0.2, p=0.5),
             # Intensity augmentations
             A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.7),
             A.OneOf(
@@ -164,7 +163,7 @@ def get_detection_train_augmentation(img_size=224):
     )
 
 
-def get_detection_val_augmentation(img_size=224):
+def get_detection_val_augmentation(img_size: int = 224) -> A.Compose:
     """
     Minimal augmentation for validation/testing.
 
@@ -192,14 +191,14 @@ class DualViewTransform:
     Used for SimCLR training.
     """
 
-    def __init__(self, transform):
+    def __init__(self, transform: Callable[..., dict[str, Any]]) -> None:
         """
         Args:
             transform: Albumentations transform to apply
         """
         self.transform = transform
 
-    def __call__(self, image):
+    def __call__(self, image: Any) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             image: numpy array (H, W, C)

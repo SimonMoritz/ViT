@@ -7,18 +7,18 @@ import torch.nn as nn
 class PatchEmbedding(nn.Module):
     """Convert image into patches and embed them."""
 
-    def __init__(self, img_size=224, patch_size=16, in_channels=3, embed_dim=192):
+    def __init__(
+        self, img_size: int = 224, patch_size: int = 16, in_channels: int = 3, embed_dim: int = 192
+    ) -> None:
         super().__init__()
         self.img_size = img_size
         self.patch_size = patch_size
         self.n_patches = (img_size // patch_size) ** 2
 
         # Convolutional projection
-        self.proj = nn.Conv2d(
-            in_channels, embed_dim, kernel_size=patch_size, stride=patch_size
-        )
+        self.proj = nn.Conv2d(in_channels, embed_dim, kernel_size=patch_size, stride=patch_size)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         """
         Args:
             x: (B, C, H, W)
@@ -34,7 +34,7 @@ class PatchEmbedding(nn.Module):
 class MultiHeadSelfAttention(nn.Module):
     """Multi-head self-attention mechanism."""
 
-    def __init__(self, embed_dim=192, n_heads=3, dropout=0.0):
+    def __init__(self, embed_dim: int = 192, n_heads: int = 3, dropout: float = 0.0) -> None:
         super().__init__()
         self.embed_dim = embed_dim
         self.n_heads = n_heads
@@ -45,7 +45,7 @@ class MultiHeadSelfAttention(nn.Module):
         self.proj = nn.Linear(embed_dim, embed_dim)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         """
         Args:
             x: (B, N, D)
@@ -81,14 +81,14 @@ class MultiHeadSelfAttention(nn.Module):
 class MLP(nn.Module):
     """Feed-forward network."""
 
-    def __init__(self, embed_dim=192, hidden_dim=768, dropout=0.0):
+    def __init__(self, embed_dim: int = 192, hidden_dim: int = 768, dropout: float = 0.0) -> None:
         super().__init__()
         self.fc1 = nn.Linear(embed_dim, hidden_dim)
         self.act = nn.GELU()
         self.fc2 = nn.Linear(hidden_dim, embed_dim)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         x = self.fc1(x)
         x = self.act(x)
         x = self.dropout(x)
@@ -100,14 +100,16 @@ class MLP(nn.Module):
 class TransformerBlock(nn.Module):
     """Transformer encoder block."""
 
-    def __init__(self, embed_dim=192, n_heads=3, mlp_ratio=4.0, dropout=0.0):
+    def __init__(
+        self, embed_dim: int = 192, n_heads: int = 3, mlp_ratio: float = 4.0, dropout: float = 0.0
+    ) -> None:
         super().__init__()
         self.norm1 = nn.LayerNorm(embed_dim)
         self.attn = MultiHeadSelfAttention(embed_dim, n_heads, dropout)
         self.norm2 = nn.LayerNorm(embed_dim)
         self.mlp = MLP(embed_dim, int(embed_dim * mlp_ratio), dropout)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         # Pre-norm architecture
         x = x + self.attn(self.norm1(x))
         x = x + self.mlp(self.norm2(x))
@@ -129,16 +131,16 @@ class ViTTiny(nn.Module):
 
     def __init__(
         self,
-        img_size=224,
-        patch_size=16,
-        in_channels=3,
-        embed_dim=192,
-        depth=12,
-        n_heads=3,
-        mlp_ratio=4.0,
-        dropout=0.0,
-        use_cls_token=True,
-    ):
+        img_size: int = 224,
+        patch_size: int = 16,
+        in_channels: int = 3,
+        embed_dim: int = 192,
+        depth: int = 12,
+        n_heads: int = 3,
+        mlp_ratio: float = 4.0,
+        dropout: float = 0.0,
+        use_cls_token: bool = True,
+    ) -> None:
         super().__init__()
         self.img_size = img_size
         self.patch_size = patch_size
@@ -163,10 +165,7 @@ class ViTTiny(nn.Module):
 
         # Transformer blocks
         self.blocks = nn.ModuleList(
-            [
-                TransformerBlock(embed_dim, n_heads, mlp_ratio, dropout)
-                for _ in range(depth)
-            ]
+            [TransformerBlock(embed_dim, n_heads, mlp_ratio, dropout) for _ in range(depth)]
         )
 
         # Final norm
@@ -175,7 +174,7 @@ class ViTTiny(nn.Module):
         # Initialize weights
         self._init_weights()
 
-    def _init_weights(self):
+    def _init_weights(self) -> None:
         """Initialize weights following ViT paper."""
         # Position embeddings
         nn.init.trunc_normal_(self.pos_embed, std=0.02)
@@ -185,7 +184,7 @@ class ViTTiny(nn.Module):
         # Apply weight initialization to all modules
         self.apply(self._init_module_weights)
 
-    def _init_module_weights(self, m):
+    def _init_module_weights(self, m: nn.Module) -> None:
         """Initialize individual module weights."""
         if isinstance(m, nn.Linear):
             nn.init.trunc_normal_(m.weight, std=0.02)
@@ -200,7 +199,7 @@ class ViTTiny(nn.Module):
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         """
         Args:
             x: (B, C, H, W) input images
@@ -232,7 +231,7 @@ class ViTTiny(nn.Module):
 
         return x
 
-    def get_patch_tokens(self, x):
+    def get_patch_tokens(self, x: Tensor) -> Tensor:
         """
         Get patch tokens without CLS token.
         Useful for dense prediction tasks like object detection.
@@ -247,7 +246,7 @@ class ViTTiny(nn.Module):
             return tokens[:, 1:, :]  # Remove CLS token
         return tokens
 
-    def get_cls_token(self, x):
+    def get_cls_token(self, x: Tensor) -> Tensor:
         """
         Get only the CLS token.
         Useful for classification tasks.
@@ -269,6 +268,4 @@ if __name__ == "__main__":
     out = model(x)
     print(f"Input shape: {x.shape}")
     print(f"Output shape: {out.shape}")
-    print(
-        f"Number of parameters: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M"
-    )
+    print(f"Number of parameters: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")

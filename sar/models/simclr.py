@@ -1,8 +1,11 @@
 """SimCLR for contrastive self-supervised pretraining."""
 
+from typing import Any
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import Tensor
 
 
 class ProjectionHead(nn.Module):
@@ -11,7 +14,7 @@ class ProjectionHead(nn.Module):
     Maps representations to a space where contrastive loss is applied.
     """
 
-    def __init__(self, input_dim=192, hidden_dim=512, output_dim=128):
+    def __init__(self, input_dim: int = 192, hidden_dim: int = 512, output_dim: int = 128) -> None:
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
@@ -20,7 +23,7 @@ class ProjectionHead(nn.Module):
             nn.Linear(hidden_dim, output_dim),
         )
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         return self.net(x)
 
 
@@ -34,11 +37,11 @@ class SimCLR(nn.Module):
 
     def __init__(
         self,
-        encoder,
-        projection_dim=128,
-        projection_hidden_dim=512,
-        temperature=0.5,
-    ):
+        encoder: Any,
+        projection_dim: int = 128,
+        projection_hidden_dim: int = 512,
+        temperature: float = 0.5,
+    ) -> None:
         """
         Args:
             encoder: ViT encoder (e.g., ViTTiny)
@@ -57,7 +60,7 @@ class SimCLR(nn.Module):
             output_dim=projection_dim,
         )
 
-    def forward(self, x1, x2):
+    def forward(self, x1: Tensor, x2: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         """
         Forward pass for SimCLR training.
 
@@ -87,7 +90,7 @@ class SimCLR(nn.Module):
 
         return loss, z1, z2
 
-    def encode(self, x):
+    def encode(self, x: Tensor) -> Tensor:
         """
         Encode image to representation.
 
@@ -108,7 +111,7 @@ class SimCLR(nn.Module):
 
         return h
 
-    def nt_xent_loss(self, z1, z2):
+    def nt_xent_loss(self, z1: Tensor, z2: Tensor) -> Tensor:
         """
         Normalized Temperature-scaled Cross Entropy Loss (NT-Xent).
 
@@ -160,7 +163,7 @@ class SimCLR(nn.Module):
         # For sample i, compute: -log( exp(sim(i, positive)) / sum_j exp(sim(i, j)) )
         # where j != i
 
-        losses = []
+        losses: list[Tensor] = []
         for i in range(2 * B):
             # Positive sample
             pos_idx = labels[i]
@@ -192,7 +195,7 @@ class SimCLR(nn.Module):
         loss = torch.stack(losses).mean()
         return loss
 
-    def get_encoder(self):
+    def get_encoder(self) -> Any:
         """Return the encoder (useful after pretraining)."""
         return self.encoder
 

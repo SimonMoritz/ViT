@@ -1,12 +1,14 @@
 """Training script for SimCLR pretraining."""
 
+import argparse
+from pathlib import Path
+from typing import cast
+
 import torch
-import torch.nn as nn
+from torch import Tensor
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from pathlib import Path
 from tqdm import tqdm
-import argparse
 
 from sar.models.vit import ViTTiny
 from sar.models.simclr import SimCLR
@@ -15,18 +17,18 @@ from sar.augmentation import get_simclr_augmentation, DualViewTransform
 
 
 def train_simclr(
-    img_dir="Airport_Dataset_v0_images",
-    output_dir="checkpoints/simclr",
-    encoder_pretrain_path=None,  # Optional: load MAE pretrained encoder
-    img_size=224,
-    batch_size=32,
-    num_epochs=200,
-    lr=3e-4,
-    weight_decay=1e-4,
-    temperature=0.5,
-    num_workers=4,
-    save_every=50,
-):
+    img_dir: str | Path = "Airport_Dataset_v0_images",
+    output_dir: str | Path = "checkpoints/simclr",
+    encoder_pretrain_path: str | Path | None = None,  # Optional: load MAE pretrained encoder
+    img_size: int = 224,
+    batch_size: int = 32,
+    num_epochs: int = 200,
+    lr: float = 3e-4,
+    weight_decay: float = 1e-4,
+    temperature: float = 0.5,
+    num_workers: int = 4,
+    save_every: int = 50,
+) -> None:
     """
     Train SimCLR for contrastive self-supervised learning.
 
@@ -58,9 +60,10 @@ def train_simclr(
     dataset = PretrainDataset(img_dir, transform=transform)
 
     # Custom collate function for dual views
-    def collate_fn(batch):
-        view1 = torch.stack([item[0] for item in batch])
-        view2 = torch.stack([item[1] for item in batch])
+    def collate_fn(batch: list[tuple[Tensor, Tensor] | Tensor]) -> tuple[Tensor, Tensor]:
+        dual_views = [cast(tuple[Tensor, Tensor], item) for item in batch]
+        view1 = torch.stack([item[0] for item in dual_views])
+        view2 = torch.stack([item[1] for item in dual_views])
         return view1, view2
 
     dataloader = DataLoader(
@@ -112,12 +115,12 @@ def train_simclr(
         epoch_loss = 0.0
         pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}")
 
-        for batch_idx, (view1, view2) in enumerate(pbar):
+        for _batch_idx, (view1, view2) in enumerate(pbar):
             view1 = view1.to(device)
             view2 = view2.to(device)
 
             # Forward pass
-            loss, z1, z2 = simclr(view1, view2)
+            loss, _z1, _z2 = simclr(view1, view2)
 
             # Backward pass
             optimizer.zero_grad()
@@ -173,7 +176,7 @@ def train_simclr(
     print("SimCLR training complete!")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description='Train SimCLR for contrastive learning')
     parser.add_argument('--img_dir', type=str, default='Airport_Dataset_v0_images',
                         help='Directory with images')

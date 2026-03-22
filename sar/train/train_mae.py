@@ -1,12 +1,13 @@
 """Training script for MAE pretraining."""
 
+import argparse
+from pathlib import Path
+
 import torch
-import torch.nn as nn
+from torch import Tensor
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from pathlib import Path
 from tqdm import tqdm
-import argparse
 
 from sar.models.vit import ViTTiny
 from sar.models.mae import MAE
@@ -14,18 +15,21 @@ from sar.data.datasets import PretrainDataset
 from sar.augmentation import get_pretrain_augmentation
 
 
+DecoderConfig = dict[str, int]
+
+
 def train_mae(
-    img_dir="Airport_Dataset_v0_images",
-    output_dir="checkpoints/mae",
-    img_size=224,
-    batch_size=32,
-    num_epochs=300,
-    lr=1.5e-4,
-    weight_decay=0.05,
-    mask_ratio=0.75,
-    num_workers=4,
-    save_every=50,
-):
+    img_dir: str | Path = "Airport_Dataset_v0_images",
+    output_dir: str | Path = "checkpoints/mae",
+    img_size: int = 224,
+    batch_size: int = 32,
+    num_epochs: int = 300,
+    lr: float = 1.5e-4,
+    weight_decay: float = 0.05,
+    mask_ratio: float = 0.75,
+    num_workers: int = 4,
+    save_every: int = 50,
+) -> None:
     """
     Train MAE for self-supervised pretraining.
 
@@ -71,7 +75,7 @@ def train_mae(
 
     # Scale decoder capacity with image size
     if img_size >= 512:
-        decoder_config = {
+        decoder_config: DecoderConfig = {
             'decoder_embed_dim': 256,  # 2x larger for high-res
             'decoder_depth': 8,        # 2x deeper
             'decoder_n_heads': 8,      # 2x more heads
@@ -112,8 +116,10 @@ def train_mae(
         epoch_loss = 0.0
         pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}")
 
-        for batch_idx, images in enumerate(pbar):
+        for _batch_idx, images in enumerate(pbar):
             images = images.to(device)
+            if not isinstance(images, Tensor):
+                raise TypeError("MAE pretraining expects tensor batches from PretrainDataset.")
 
             # Forward pass
             loss, pred_imgs, mask = mae(images)
@@ -143,8 +149,6 @@ def train_mae(
                     # Visualize first image in batch
                     original = images[0].cpu()
                     reconstructed = pred_imgs[0].cpu()
-                    mask_vis = mask[0].cpu()
-
                     writer.add_image('mae/original', original, global_step)
                     writer.add_image('mae/reconstructed', reconstructed.clamp(0, 1), global_step)
 
@@ -178,7 +182,7 @@ def train_mae(
     print("MAE training complete!")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description='Train MAE for self-supervised pretraining')
     parser.add_argument('--img_dir', type=str, default='Airport_Dataset_v0_images',
                         help='Directory with images')
