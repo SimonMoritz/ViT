@@ -7,6 +7,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
+from sar.config import (
+    SIMCLR_PROJECTION_DIM,
+    SIMCLR_PROJECTION_HIDDEN_DIM,
+    SIMCLR_TEMPERATURE,
+    VIT_EMBED_DIM,
+)
+
 
 class ProjectionHead(nn.Module):
     """
@@ -14,7 +21,12 @@ class ProjectionHead(nn.Module):
     Maps representations to a space where contrastive loss is applied.
     """
 
-    def __init__(self, input_dim: int = 192, hidden_dim: int = 512, output_dim: int = 128) -> None:
+    def __init__(
+        self,
+        input_dim: int = VIT_EMBED_DIM,
+        hidden_dim: int = SIMCLR_PROJECTION_HIDDEN_DIM,
+        output_dim: int = SIMCLR_PROJECTION_DIM,
+    ) -> None:
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
@@ -38,9 +50,9 @@ class SimCLR(nn.Module):
     def __init__(
         self,
         encoder: Any,
-        projection_dim: int = 128,
-        projection_hidden_dim: int = 512,
-        temperature: float = 0.5,
+        projection_dim: int = SIMCLR_PROJECTION_DIM,
+        projection_hidden_dim: int = SIMCLR_PROJECTION_HIDDEN_DIM,
+        temperature: float = SIMCLR_TEMPERATURE,
     ) -> None:
         """
         Args:
@@ -198,23 +210,3 @@ class SimCLR(nn.Module):
     def get_encoder(self) -> Any:
         """Return the encoder (useful after pretraining)."""
         return self.encoder
-
-
-if __name__ == "__main__":
-    from sar.models.vit import ViTTiny
-
-    # Test SimCLR
-    encoder = ViTTiny(img_size=224, use_cls_token=False)
-    simclr = SimCLR(encoder, projection_dim=128, temperature=0.5)
-
-    # Two augmented views of the same batch
-    x1 = torch.randn(4, 3, 224, 224)
-    x2 = torch.randn(4, 3, 224, 224)
-
-    loss, z1, z2 = simclr(x1, x2)
-
-    print(f"Input shape: {x1.shape}")
-    print(f"Projection z1 shape: {z1.shape}")
-    print(f"Projection z2 shape: {z2.shape}")
-    print(f"Loss: {loss.item():.4f}")
-    print(f"SimCLR params: {sum(p.numel() for p in simclr.parameters()) / 1e6:.2f}M")

@@ -3,16 +3,24 @@ import shutil
 from collections import defaultdict
 from pathlib import Path
 
+from sar.config import (
+    DATASET_SPLIT_SEED,
+    RATIO_TOLERANCE,
+    TEST_SPLIT_RATIO,
+    TRAIN_SPLIT_RATIO,
+    VAL_SPLIT_RATIO,
+)
+
 
 def split_dataset(
     img_dir: Path | str,
     label_dir: Path | str,
     output_dir: Path | str,
-    train_ratio: float = 0.7,
-    val_ratio: float = 0.2,
-    test_ratio: float = 0.1,
-    seed: int = 42,
-):
+    train_ratio: float = TRAIN_SPLIT_RATIO,
+    val_ratio: float = VAL_SPLIT_RATIO,
+    test_ratio: float = TEST_SPLIT_RATIO,
+    seed: int = DATASET_SPLIT_SEED,
+) -> None:
     """
     Split dataset into train/val/test sets while keeping images from the same airport together.
 
@@ -45,16 +53,19 @@ def split_dataset(
     output_dir = Path(output_dir)
 
     # Validate ratios
-    assert abs(train_ratio + val_ratio + test_ratio - 1.0) < 1e-6, "Ratios must sum to 1.0"
+    if abs(train_ratio + val_ratio + test_ratio - 1.0) >= RATIO_TOLERANCE:
+        raise ValueError("Ratios must sum to 1.0")
 
     # Get all image files
     images = sorted(img_dir.glob("*.jpg"))
-    assert images, f"No images found in {img_dir}"
+    if not images:
+        raise ValueError(f"No images found in {img_dir}")
 
     # Verify all images have corresponding labels
     for img_path in images:
         label_path = label_dir / (img_path.stem + ".txt")
-        assert label_path.exists(), f"Missing label for {img_path.name}"
+        if not label_path.exists():
+            raise ValueError(f"Missing label for {img_path.name}")
 
     # Group images by airport
     # Format: American_LosAngeles_1.jpg -> American_LosAngeles

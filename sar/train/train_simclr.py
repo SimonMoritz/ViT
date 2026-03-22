@@ -7,27 +7,50 @@ from typing import cast
 import torch
 from torch import Tensor
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from sar.augmentation import DualViewTransform, get_simclr_augmentation
+from sar.config import (
+    DEFAULT_IMG_SIZE,
+    DEFAULT_NUM_WORKERS,
+    LOG_IMAGE_EVERY,
+    LOG_SCALAR_EVERY,
+    RAW_IMAGE_DIR,
+    SIMCLR_ADAMW_BETAS,
+    SIMCLR_BATCH_SIZE,
+    SIMCLR_LR,
+    SIMCLR_NUM_EPOCHS,
+    SIMCLR_OUTPUT_DIR,
+    SIMCLR_PROJECTION_DIM,
+    SIMCLR_SAVE_EVERY,
+    SIMCLR_TEMPERATURE,
+    SIMCLR_WEIGHT_DECAY,
+)
 from sar.data.datasets import PretrainDataset
 from sar.models.simclr import SimCLR
 from sar.models.vit import ViTTiny
+from sar.train.trainer import (
+    build_cosine_optimizer,
+    build_tensorboard_writer,
+    get_device,
+    log_step_scalars,
+    save_checkpoint,
+    setup_output_dir,
+)
 
 
 def train_simclr(
-    img_dir: str | Path = "Airport_Dataset_v0_images",
-    output_dir: str | Path = "checkpoints/simclr",
+    img_dir: str | Path = RAW_IMAGE_DIR,
+    output_dir: str | Path = SIMCLR_OUTPUT_DIR,
     encoder_pretrain_path: str | Path | None = None,  # Optional: load MAE pretrained encoder
-    img_size: int = 224,
-    batch_size: int = 32,
-    num_epochs: int = 200,
-    lr: float = 3e-4,
-    weight_decay: float = 1e-4,
-    temperature: float = 0.5,
-    num_workers: int = 4,
-    save_every: int = 50,
+    img_size: int = DEFAULT_IMG_SIZE,
+    batch_size: int = SIMCLR_BATCH_SIZE,
+    num_epochs: int = SIMCLR_NUM_EPOCHS,
+    lr: float = SIMCLR_LR,
+    weight_decay: float = SIMCLR_WEIGHT_DECAY,
+    temperature: float = SIMCLR_TEMPERATURE,
+    num_workers: int = DEFAULT_NUM_WORKERS,
+    save_every: int = SIMCLR_SAVE_EVERY,
 ) -> None:
     """
     Train SimCLR for contrastive self-supervised learning.
@@ -45,15 +68,11 @@ def train_simclr(
         num_workers: Number of dataloader workers
         save_every: Save checkpoint every N epochs
     """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = get_device()
     print(f"Using device: {device}")
 
-    # Create output directory
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # TensorBoard
-    writer = SummaryWriter(output_dir / "logs")
+    output_dir = setup_output_dir(output_dir)
+    writer = build_tensorboard_writer(output_dir)
 
     # Dataset and dataloader (dual view transform)
     transform = DualViewTransform(get_simclr_augmentation(img_size))
@@ -88,19 +107,18 @@ def train_simclr(
         state_dict = torch.load(encoder_pretrain_path, map_location="cpu")
         encoder.load_state_dict(state_dict)
 
-    simclr = SimCLR(encoder, projection_dim=128, temperature=temperature)
+    simclr = SimCLR(encoder, projection_dim=SIMCLR_PROJECTION_DIM, temperature=temperature)
     simclr = simclr.to(device)
 
     print(f"Model parameters: {sum(p.numel() for p in simclr.parameters()) / 1e6:.2f}M")
 
     # Optimizer
-    optimizer = torch.optim.AdamW(
-        simclr.parameters(), lr=lr, betas=(0.9, 0.999), weight_decay=weight_decay
-    )
-
-    # Cosine learning rate schedule
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=num_epochs, eta_min=lr * 0.01
+    optimizer, scheduler = build_cosine_optimizer(
+        simclr.parameters(),
+        lr=lr,
+        weight_decay=weight_decay,
+        num_epochs=num_epochs,
+        betas=SIMCLR_ADAMW_BETAS,
     )
 
     # Training loop
@@ -131,12 +149,18 @@ def train_simclr(
             )
 
             # TensorBoard logging
-            if global_step % 10 == 0:
-                writer.add_scalar("train/loss", loss.item(), global_step)
-                writer.add_scalar("train/lr", optimizer.param_groups[0]["lr"], global_step)
+            if global_step % LOG_SCALAR_EVERY == 0:
+                log_step_scalars(
+                    writer,
+                    {
+                        "train/loss": loss.item(),
+                        "train/lr": optimizer.param_groups[0]["lr"],
+                    },
+                    global_step,
+                )
 
             # Log sample views
-            if global_step % 100 == 0:
+            if global_step % LOG_IMAGE_EVERY == 0:
                 writer.add_image("simclr/view1", view1[0].cpu(), global_step)
                 writer.add_image("simclr/view2", view2[0].cpu(), global_step)
 
@@ -151,7 +175,8 @@ def train_simclr(
         # Save checkpoint
         if (epoch + 1) % save_every == 0 or epoch == num_epochs - 1:
             checkpoint_path = output_dir / f"simclr_epoch_{epoch + 1}.pth"
-            torch.save(
+            save_checkpoint(
+                checkpoint_path,
                 {
                     "epoch": epoch + 1,
                     "model_state_dict": simclr.state_dict(),
@@ -160,13 +185,12 @@ def train_simclr(
                     "scheduler_state_dict": scheduler.state_dict(),
                     "loss": avg_loss,
                 },
-                checkpoint_path,
             )
             print(f"Saved checkpoint: {checkpoint_path}")
 
     # Save final encoder
     encoder_path = output_dir / "encoder_simclr_final.pth"
-    torch.save(simclr.encoder.state_dict(), encoder_path)
+    save_checkpoint(encoder_path, simclr.encoder.state_dict())
     print(f"Saved final encoder: {encoder_path}")
 
     writer.close()
@@ -176,12 +200,12 @@ def train_simclr(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train SimCLR for contrastive learning")
     parser.add_argument(
-        "--img_dir", type=str, default="Airport_Dataset_v0_images", help="Directory with images"
+        "--img_dir", type=str, default=str(RAW_IMAGE_DIR), help="Directory with images"
     )
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="checkpoints/simclr",
+        default=str(SIMCLR_OUTPUT_DIR),
         help="Output directory for checkpoints",
     )
     parser.add_argument(
@@ -190,16 +214,30 @@ def main() -> None:
         default=None,
         help="Path to MAE pretrained encoder (optional)",
     )
-    parser.add_argument("--img_size", type=int, default=224, help="Image size")
-    parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
-    parser.add_argument("--num_epochs", type=int, default=200, help="Number of epochs")
-    parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate")
-    parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
+    parser.add_argument("--img_size", type=int, default=DEFAULT_IMG_SIZE, help="Image size")
+    parser.add_argument("--batch_size", type=int, default=SIMCLR_BATCH_SIZE, help="Batch size")
     parser.add_argument(
-        "--temperature", type=float, default=0.5, help="Temperature for contrastive loss"
+        "--num_epochs", type=int, default=SIMCLR_NUM_EPOCHS, help="Number of epochs"
     )
-    parser.add_argument("--num_workers", type=int, default=4, help="Number of dataloader workers")
-    parser.add_argument("--save_every", type=int, default=50, help="Save checkpoint every N epochs")
+    parser.add_argument("--lr", type=float, default=SIMCLR_LR, help="Learning rate")
+    parser.add_argument(
+        "--weight_decay", type=float, default=SIMCLR_WEIGHT_DECAY, help="Weight decay"
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=SIMCLR_TEMPERATURE,
+        help="Temperature for contrastive loss",
+    )
+    parser.add_argument(
+        "--num_workers", type=int, default=DEFAULT_NUM_WORKERS, help="Number of dataloader workers"
+    )
+    parser.add_argument(
+        "--save_every",
+        type=int,
+        default=SIMCLR_SAVE_EVERY,
+        help="Save checkpoint every N epochs",
+    )
 
     args = parser.parse_args()
 

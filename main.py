@@ -1,15 +1,24 @@
 from sar import split_dataset
+from sar.config import (
+    DATASET_SPLIT_SEED,
+    RAW_IMAGE_DIR,
+    RAW_LABEL_DIR,
+    SPLIT_OUTPUT_DIR,
+    TEST_SPLIT_RATIO,
+    TRAIN_SPLIT_RATIO,
+    VAL_SPLIT_RATIO,
+)
 
 
-def main():
+def main() -> None:
     split_dataset(
-        img_dir="Airport_Dataset_v0_images",
-        label_dir="Airport_Dataset_v0_labels",
-        output_dir="dataset",
-        train_ratio=0.7,
-        val_ratio=0.2,
-        test_ratio=0.1,
-        seed=43,
+        img_dir=RAW_IMAGE_DIR,
+        label_dir=RAW_LABEL_DIR,
+        output_dir=SPLIT_OUTPUT_DIR,
+        train_ratio=TRAIN_SPLIT_RATIO,
+        val_ratio=VAL_SPLIT_RATIO,
+        test_ratio=TEST_SPLIT_RATIO,
+        seed=DATASET_SPLIT_SEED,
     )
 
 

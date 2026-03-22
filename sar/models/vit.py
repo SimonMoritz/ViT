@@ -4,12 +4,26 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
+from sar.config import (
+    DEFAULT_IMG_SIZE,
+    VIT_DEPTH,
+    VIT_DROPOUT,
+    VIT_EMBED_DIM,
+    VIT_MLP_RATIO,
+    VIT_NUM_HEADS,
+    VIT_PATCH_SIZE,
+)
+
 
 class PatchEmbedding(nn.Module):
     """Convert image into patches and embed them."""
 
     def __init__(
-        self, img_size: int = 224, patch_size: int = 16, in_channels: int = 3, embed_dim: int = 192
+        self,
+        img_size: int = DEFAULT_IMG_SIZE,
+        patch_size: int = VIT_PATCH_SIZE,
+        in_channels: int = 3,
+        embed_dim: int = VIT_EMBED_DIM,
     ) -> None:
         super().__init__()
         self.img_size = img_size
@@ -35,12 +49,18 @@ class PatchEmbedding(nn.Module):
 class MultiHeadSelfAttention(nn.Module):
     """Multi-head self-attention mechanism."""
 
-    def __init__(self, embed_dim: int = 192, n_heads: int = 3, dropout: float = 0.0) -> None:
+    def __init__(
+        self,
+        embed_dim: int = VIT_EMBED_DIM,
+        n_heads: int = VIT_NUM_HEADS,
+        dropout: float = VIT_DROPOUT,
+    ) -> None:
         super().__init__()
         self.embed_dim = embed_dim
         self.n_heads = n_heads
         self.head_dim = embed_dim // n_heads
-        assert embed_dim % n_heads == 0, "embed_dim must be divisible by n_heads"
+        if embed_dim % n_heads != 0:
+            raise ValueError("embed_dim must be divisible by n_heads")
 
         self.qkv = nn.Linear(embed_dim, embed_dim * 3)
         self.proj = nn.Linear(embed_dim, embed_dim)
@@ -82,7 +102,12 @@ class MultiHeadSelfAttention(nn.Module):
 class MLP(nn.Module):
     """Feed-forward network."""
 
-    def __init__(self, embed_dim: int = 192, hidden_dim: int = 768, dropout: float = 0.0) -> None:
+    def __init__(
+        self,
+        embed_dim: int = VIT_EMBED_DIM,
+        hidden_dim: int = 768,
+        dropout: float = VIT_DROPOUT,
+    ) -> None:
         super().__init__()
         self.fc1 = nn.Linear(embed_dim, hidden_dim)
         self.act = nn.GELU()
@@ -102,7 +127,11 @@ class TransformerBlock(nn.Module):
     """Transformer encoder block."""
 
     def __init__(
-        self, embed_dim: int = 192, n_heads: int = 3, mlp_ratio: float = 4.0, dropout: float = 0.0
+        self,
+        embed_dim: int = VIT_EMBED_DIM,
+        n_heads: int = VIT_NUM_HEADS,
+        mlp_ratio: float = VIT_MLP_RATIO,
+        dropout: float = VIT_DROPOUT,
     ) -> None:
         super().__init__()
         self.norm1 = nn.LayerNorm(embed_dim)
@@ -132,14 +161,14 @@ class ViTTiny(nn.Module):
 
     def __init__(
         self,
-        img_size: int = 224,
-        patch_size: int = 16,
+        img_size: int = DEFAULT_IMG_SIZE,
+        patch_size: int = VIT_PATCH_SIZE,
         in_channels: int = 3,
-        embed_dim: int = 192,
-        depth: int = 12,
-        n_heads: int = 3,
-        mlp_ratio: float = 4.0,
-        dropout: float = 0.0,
+        embed_dim: int = VIT_EMBED_DIM,
+        depth: int = VIT_DEPTH,
+        n_heads: int = VIT_NUM_HEADS,
+        mlp_ratio: float = VIT_MLP_RATIO,
+        dropout: float = VIT_DROPOUT,
         use_cls_token: bool = True,
     ) -> None:
         super().__init__()
@@ -257,16 +286,7 @@ class ViTTiny(nn.Module):
         Returns:
             (B, D)
         """
-        assert self.use_cls_token, "CLS token not enabled"
+        if not self.use_cls_token:
+            raise ValueError("CLS token not enabled")
         tokens = self.forward(x)
         return tokens[:, 0, :]  # First token is CLS
-
-
-if __name__ == "__main__":
-    # Test the model
-    model = ViTTiny(img_size=224, use_cls_token=False)
-    x = torch.randn(2, 3, 224, 224)
-    out = model(x)
-    print(f"Input shape: {x.shape}")
-    print(f"Output shape: {out.shape}")
-    print(f"Number of parameters: {sum(p.numel() for p in model.parameters()) / 1e6:.2f}M")

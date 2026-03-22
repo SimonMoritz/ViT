@@ -7,6 +7,8 @@ import albumentations as A
 import torch
 from albumentations.pytorch import ToTensorV2
 
+from sar.config import SAR_NORMALIZE_MEAN, SAR_NORMALIZE_STD
+
 
 def get_pretrain_augmentation(img_size: int = 224) -> A.Compose:
     """
@@ -74,7 +76,7 @@ def get_pretrain_augmentation(img_size: int = 224) -> A.Compose:
                 p=0.3,
             ),
             # Normalize (assuming grayscale or RGB with similar statistics)
-            A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
+            A.Normalize(mean=SAR_NORMALIZE_MEAN, std=SAR_NORMALIZE_STD),
             ToTensorV2(),
         ]
     )
@@ -116,7 +118,7 @@ def get_simclr_augmentation(img_size: int = 224) -> A.Compose:
             # Noise
             A.GaussNoise(p=0.3),
             # Normalize
-            A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
+            A.Normalize(mean=SAR_NORMALIZE_MEAN, std=SAR_NORMALIZE_STD),
             ToTensorV2(),
         ]
     )
@@ -158,7 +160,7 @@ def get_detection_train_augmentation(img_size: int = 224) -> A.Compose:
             ),
             A.GaussNoise(p=0.3),
             # Normalize
-            A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
+            A.Normalize(mean=SAR_NORMALIZE_MEAN, std=SAR_NORMALIZE_STD),
             ToTensorV2(),
         ],
         bbox_params=A.BboxParams(
@@ -181,7 +183,7 @@ def get_detection_val_augmentation(img_size: int = 224) -> A.Compose:
     return A.Compose(
         [
             A.Resize(img_size, img_size),
-            A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
+            A.Normalize(mean=SAR_NORMALIZE_MEAN, std=SAR_NORMALIZE_STD),
             ToTensorV2(),
         ],
         bbox_params=A.BboxParams(
@@ -214,40 +216,3 @@ class DualViewTransform:
         view1 = self.transform(image=image)["image"]
         view2 = self.transform(image=image)["image"]
         return view1, view2
-
-
-if __name__ == "__main__":
-    from pathlib import Path
-
-    import cv2
-
-    # Test augmentations
-    img_path = Path("Airport_Dataset_v0_images")
-    images = sorted(img_path.glob("*.jpg"))
-
-    if images:
-        img = cv2.imread(str(images[0]))
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-        print(f"Original image shape: {img.shape}")
-
-        # Test pretrain augmentation
-        aug = get_pretrain_augmentation(224)
-        augmented = aug(image=img)["image"]
-        print(f"Augmented shape: {augmented.shape}")
-
-        # Test dual view
-        dual = DualViewTransform(get_simclr_augmentation(224))
-        view1, view2 = dual(img)
-        print(f"View 1 shape: {view1.shape}")
-        print(f"View 2 shape: {view2.shape}")
-
-        # Test detection augmentation
-        bboxes = [[0.5, 0.5, 0.2, 0.3]]  # cx, cy, w, h normalized
-        labels = [0]
-        det_aug = get_detection_train_augmentation(224)
-        det_result = det_aug(image=img, bboxes=bboxes, class_labels=labels)
-        print(f"Detection augmented shape: {det_result['image'].shape}")
-        print(f"Augmented bboxes: {det_result['bboxes']}")
-    else:
-        print("No images found for testing")

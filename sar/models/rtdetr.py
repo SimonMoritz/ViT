@@ -7,7 +7,22 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
+from sar.config import (
+    DETECTION_COST_BBOX,
+    DETECTION_COST_CLASS,
+    DETECTION_COST_GIOU,
+    DETECTION_DECODER_LAYERS,
+    DETECTION_DIM_FEEDFORWARD,
+    DETECTION_DROPOUT,
+    DETECTION_HIDDEN_DIM,
+    DETECTION_LOSS_WEIGHT_BBOX,
+    DETECTION_LOSS_WEIGHT_GIOU,
+    DETECTION_NUM_CLASSES,
+    DETECTION_NUM_HEADS,
+    DETECTION_NUM_QUERIES,
+)
 from sar.data.datasets import TensorDict
+from sar.utils.boxes import generalized_box_iou, giou_loss
 
 
 class MLP(nn.Module):
@@ -99,13 +114,13 @@ class RTDETR(nn.Module):
     def __init__(
         self,
         encoder: Any,
-        num_classes: int = 1,  # Single class: airport
-        num_queries: int = 100,
-        hidden_dim: int = 256,
-        nheads: int = 8,
-        num_decoder_layers: int = 6,
-        dim_feedforward: int = 1024,
-        dropout: float = 0.1,
+        num_classes: int = DETECTION_NUM_CLASSES,  # Single class: airport
+        num_queries: int = DETECTION_NUM_QUERIES,
+        hidden_dim: int = DETECTION_HIDDEN_DIM,
+        nheads: int = DETECTION_NUM_HEADS,
+        num_decoder_layers: int = DETECTION_DECODER_LAYERS,
+        dim_feedforward: int = DETECTION_DIM_FEEDFORWARD,
+        dropout: float = DETECTION_DROPOUT,
     ) -> None:
         """
         Args:
@@ -205,10 +220,10 @@ class RTDETRLoss(nn.Module):
 
     def __init__(
         self,
-        num_classes: int = 1,
-        cost_class: float = 1.0,
-        cost_bbox: float = 5.0,
-        cost_giou: float = 2.0,
+        num_classes: int = DETECTION_NUM_CLASSES,
+        cost_class: float = DETECTION_COST_CLASS,
+        cost_bbox: float = DETECTION_COST_BBOX,
+        cost_giou: float = DETECTION_COST_GIOU,
     ) -> None:
         """
         Args:
@@ -242,16 +257,7 @@ class RTDETRLoss(nn.Module):
         # Flatten batch dimension for matching
         pred_boxes_flat = pred_boxes.flatten(0, 1)  # (B*num_queries, 4)
 
-        # Concatenate all targets
-        target_label_list: list[Tensor] = []
-        target_box_list: list[Tensor] = []
-        batch_idx = []
-        for i, t in enumerate(targets):
-            target_label_list.append(t["labels"])
-            target_box_list.append(t["boxes"])
-            batch_idx.extend([i] * len(t["labels"]))
-
-        if len(target_label_list) == 0:
+        if not any(len(target["labels"]) for target in targets):
             # No targets in batch
             losses = {
                 "loss_ce": pred_logits.sum() * 0.0,  # Dummy loss
@@ -260,8 +266,6 @@ class RTDETRLoss(nn.Module):
             }
             losses["loss"] = losses["loss_ce"] + losses["loss_bbox"] + losses["loss_giou"]
             return losses
-
-        batch_idx = torch.tensor(batch_idx, device=device)
 
         # Hungarian matching
         indices = self.hungarian_matching(pred_logits, pred_boxes, targets)
@@ -305,8 +309,8 @@ class RTDETRLoss(nn.Module):
 
         losses = {
             "loss_ce": loss_ce,
-            "loss_bbox": loss_bbox * 5.0,  # Weight bbox loss
-            "loss_giou": loss_giou * 2.0,  # Weight GIoU loss
+            "loss_bbox": loss_bbox * DETECTION_LOSS_WEIGHT_BBOX,
+            "loss_giou": loss_giou * DETECTION_LOSS_WEIGHT_GIOU,
         }
         losses["loss"] = losses["loss_ce"] + losses["loss_bbox"] + losses["loss_giou"]
 
@@ -360,7 +364,7 @@ class RTDETRLoss(nn.Module):
             cost_bbox = torch.cdist(out_bbox, tgt_bbox, p=1)  # (num_queries, num_targets)
 
             # GIoU cost
-            cost_giou = -self.generalized_box_iou(out_bbox, tgt_bbox)  # (num_queries, num_targets)
+            cost_giou = -generalized_box_iou(out_bbox, tgt_bbox)  # (num_queries, num_targets)
 
             # Final cost matrix
             C = (
@@ -383,102 +387,9 @@ class RTDETRLoss(nn.Module):
         return indices
 
     def generalized_box_iou(self, boxes1: Tensor, boxes2: Tensor) -> Tensor:
-        """
-        Compute generalized IoU between two sets of boxes.
-        Boxes are in (cx, cy, w, h) format, normalized.
-
-        Args:
-            boxes1: (N, 4)
-            boxes2: (M, 4)
-        Returns:
-            (N, M) GIoU matrix
-        """
-        # Convert to (x1, y1, x2, y2)
-        boxes1_xyxy = self.box_cxcywh_to_xyxy(boxes1)
-        boxes2_xyxy = self.box_cxcywh_to_xyxy(boxes2)
-
-        # Compute IoU
-        iou = self.box_iou(boxes1_xyxy, boxes2_xyxy)
-
-        # Compute enclosing box
-        lt = torch.min(boxes1_xyxy[:, None, :2], boxes2_xyxy[None, :, :2])
-        rb = torch.max(boxes1_xyxy[:, None, 2:], boxes2_xyxy[None, :, 2:])
-        wh = (rb - lt).clamp(min=0)
-        area_c = wh[:, :, 0] * wh[:, :, 1]
-
-        # GIoU
-        area1 = (boxes1_xyxy[:, 2] - boxes1_xyxy[:, 0]) * (boxes1_xyxy[:, 3] - boxes1_xyxy[:, 1])
-        area2 = (boxes2_xyxy[:, 2] - boxes2_xyxy[:, 0]) * (boxes2_xyxy[:, 3] - boxes2_xyxy[:, 1])
-        union = area1[:, None] + area2[None, :] - iou * area1[:, None]
-
-        giou = iou - (area_c - union) / area_c
-
-        return giou
-
-    def box_iou(self, boxes1: Tensor, boxes2: Tensor) -> Tensor:
-        """
-        Compute IoU between two sets of boxes (x1, y1, x2, y2).
-
-        Args:
-            boxes1: (N, 4)
-            boxes2: (M, 4)
-        Returns:
-            (N, M) IoU matrix
-        """
-        area1 = (boxes1[:, 2] - boxes1[:, 0]) * (boxes1[:, 3] - boxes1[:, 1])
-        area2 = (boxes2[:, 2] - boxes2[:, 0]) * (boxes2[:, 3] - boxes2[:, 1])
-
-        lt = torch.max(boxes1[:, None, :2], boxes2[None, :, :2])
-        rb = torch.min(boxes1[:, None, 2:], boxes2[None, :, 2:])
-
-        wh = (rb - lt).clamp(min=0)
-        inter = wh[:, :, 0] * wh[:, :, 1]
-
-        union = area1[:, None] + area2[None, :] - inter
-
-        iou = inter / union.clamp(min=1e-6)
-        return iou
-
-    def box_cxcywh_to_xyxy(self, boxes: Tensor) -> Tensor:
-        """Convert boxes from (cx, cy, w, h) to (x1, y1, x2, y2)."""
-        cx, cy, w, h = boxes.unbind(-1)
-        x1 = cx - 0.5 * w
-        y1 = cy - 0.5 * h
-        x2 = cx + 0.5 * w
-        y2 = cy + 0.5 * h
-        return torch.stack([x1, y1, x2, y2], dim=-1)
+        """Compatibility wrapper around shared box utilities."""
+        return generalized_box_iou(boxes1, boxes2)
 
     def giou_loss(self, pred_boxes: Tensor, target_boxes: Tensor) -> Tensor:
-        """Compute GIoU loss for matched boxes."""
-        giou = torch.diagonal(self.generalized_box_iou(pred_boxes, target_boxes))
-        loss = 1 - giou
-        return loss.mean()
-
-
-if __name__ == "__main__":
-    from sar.models.vit import ViTTiny
-
-    # Test RT-DETR
-    encoder = ViTTiny(img_size=224, use_cls_token=False)
-    rtdetr = RTDETR(encoder, num_classes=1, num_queries=100)
-
-    x = torch.randn(2, 3, 224, 224)
-    pred_logits, pred_boxes = rtdetr(x)
-
-    print(f"Input shape: {x.shape}")
-    print(f"Pred logits shape: {pred_logits.shape}")
-    print(f"Pred boxes shape: {pred_boxes.shape}")
-    print(f"RT-DETR params: {sum(p.numel() for p in rtdetr.parameters()) / 1e6:.2f}M")
-
-    # Test loss
-    targets = [
-        {
-            "labels": torch.tensor([0, 0]),
-            "boxes": torch.tensor([[0.5, 0.5, 0.2, 0.3], [0.3, 0.4, 0.1, 0.2]]),
-        },
-        {"labels": torch.tensor([0]), "boxes": torch.tensor([[0.6, 0.6, 0.15, 0.25]])},
-    ]
-
-    criterion = RTDETRLoss(num_classes=1)
-    losses = criterion(pred_logits, pred_boxes, targets)
-    print(f"\nLosses: {losses}")
+        """Compatibility wrapper around shared box utilities."""
+        return giou_loss(pred_boxes, target_boxes)

@@ -5,31 +5,58 @@ from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from sar.augmentation import get_detection_train_augmentation, get_detection_val_augmentation
+from sar.config import (
+    DEFAULT_IMG_SIZE,
+    DEFAULT_NUM_WORKERS,
+    DETECTION_ADAMW_BETAS,
+    DETECTION_BATCH_SIZE,
+    DETECTION_FREEZE_ENCODER_EPOCHS,
+    DETECTION_GRAD_CLIP_NORM,
+    DETECTION_LR,
+    DETECTION_NUM_CLASSES,
+    DETECTION_NUM_EPOCHS,
+    DETECTION_NUM_QUERIES,
+    DETECTION_OUTPUT_DIR,
+    DETECTION_SAVE_EVERY,
+    DETECTION_WEIGHT_DECAY,
+    LOG_SCALAR_EVERY,
+    TRAIN_IMAGE_DIR,
+    TRAIN_LABEL_DIR,
+    VAL_IMAGE_DIR,
+    VAL_LABEL_DIR,
+)
 from sar.data.datasets import DetectionDataset, TensorDict, collate_fn_detection
 from sar.models.rtdetr import RTDETR, RTDETRLoss
 from sar.models.vit import ViTTiny
+from sar.train.trainer import (
+    build_cosine_optimizer,
+    build_tensorboard_writer,
+    get_device,
+    log_step_scalars,
+    save_checkpoint,
+    setup_output_dir,
+)
 
 
 def train_detection(
-    train_img_dir: str | Path = "dataset/train/images",
-    train_label_dir: str | Path = "dataset/train/labels",
-    val_img_dir: str | Path = "dataset/val/images",
-    val_label_dir: str | Path = "dataset/val/labels",
-    output_dir: str | Path = "checkpoints/detection",
+    train_img_dir: str | Path = TRAIN_IMAGE_DIR,
+    train_label_dir: str | Path = TRAIN_LABEL_DIR,
+    val_img_dir: str | Path = VAL_IMAGE_DIR,
+    val_label_dir: str | Path = VAL_LABEL_DIR,
+    output_dir: str | Path = DETECTION_OUTPUT_DIR,
     encoder_pretrain_path: str | Path | None = None,  # Path to pretrained encoder (MAE or SimCLR)
-    img_size: int = 224,
-    batch_size: int = 8,
-    num_epochs: int = 100,
-    lr: float = 1e-4,
-    weight_decay: float = 1e-4,
-    num_queries: int = 100,
-    num_workers: int = 4,
-    freeze_encoder_epochs: int = 0,  # Freeze encoder for first N epochs
-    save_every: int = 10,
+    img_size: int = DEFAULT_IMG_SIZE,
+    batch_size: int = DETECTION_BATCH_SIZE,
+    num_epochs: int = DETECTION_NUM_EPOCHS,
+    lr: float = DETECTION_LR,
+    weight_decay: float = DETECTION_WEIGHT_DECAY,
+    num_queries: int = DETECTION_NUM_QUERIES,
+    num_workers: int = DEFAULT_NUM_WORKERS,
+    freeze_encoder_epochs: int = DETECTION_FREEZE_ENCODER_EPOCHS,
+    save_every: int = DETECTION_SAVE_EVERY,
 ) -> None:
     """
     Train RT-DETR for object detection.
@@ -51,15 +78,11 @@ def train_detection(
         freeze_encoder_epochs: Freeze encoder for first N epochs
         save_every: Save checkpoint every N epochs
     """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = get_device()
     print(f"Using device: {device}")
 
-    # Create output directory
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # TensorBoard
-    writer = SummaryWriter(output_dir / "logs")
+    output_dir = setup_output_dir(output_dir)
+    writer = build_tensorboard_writer(output_dir)
 
     # Datasets
     train_transform = get_detection_train_augmentation(img_size)
@@ -103,20 +126,20 @@ def train_detection(
         encoder.load_state_dict(state_dict)
         print("Pretrained encoder loaded successfully!")
 
-    rtdetr = RTDETR(encoder, num_classes=1, num_queries=num_queries)
+    rtdetr = RTDETR(encoder, num_classes=DETECTION_NUM_CLASSES, num_queries=num_queries)
     rtdetr = rtdetr.to(device)
 
     print(f"Model parameters: {sum(p.numel() for p in rtdetr.parameters()) / 1e6:.2f}M")
 
     # Loss
-    criterion = RTDETRLoss(num_classes=1)
+    criterion = RTDETRLoss(num_classes=DETECTION_NUM_CLASSES)
 
-    # Optimizer
-    optimizer = torch.optim.AdamW(rtdetr.parameters(), lr=lr, weight_decay=weight_decay)
-
-    # Learning rate schedule
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(
-        optimizer, milestones=[int(num_epochs * 0.7), int(num_epochs * 0.9)], gamma=0.1
+    optimizer, scheduler = build_cosine_optimizer(
+        rtdetr.parameters(),
+        lr=lr,
+        weight_decay=weight_decay,
+        num_epochs=num_epochs,
+        betas=DETECTION_ADAMW_BETAS,
     )
 
     # Training loop
@@ -153,7 +176,7 @@ def train_detection(
             # Backward pass
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(rtdetr.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(rtdetr.parameters(), max_norm=DETECTION_GRAD_CLIP_NORM)
             optimizer.step()
 
             # Logging
@@ -170,12 +193,18 @@ def train_detection(
             )
 
             # TensorBoard logging
-            if global_step % 10 == 0:
-                writer.add_scalar("train/loss", loss.item(), global_step)
-                writer.add_scalar("train/loss_ce", losses["loss_ce"].item(), global_step)
-                writer.add_scalar("train/loss_bbox", losses["loss_bbox"].item(), global_step)
-                writer.add_scalar("train/loss_giou", losses["loss_giou"].item(), global_step)
-                writer.add_scalar("train/lr", optimizer.param_groups[0]["lr"], global_step)
+            if global_step % LOG_SCALAR_EVERY == 0:
+                log_step_scalars(
+                    writer,
+                    {
+                        "train/loss": loss.item(),
+                        "train/loss_ce": losses["loss_ce"].item(),
+                        "train/loss_bbox": losses["loss_bbox"].item(),
+                        "train/loss_giou": losses["loss_giou"].item(),
+                        "train/lr": optimizer.param_groups[0]["lr"],
+                    },
+                    global_step,
+                )
 
         avg_train_loss = train_loss / len(train_loader)
         print(f"Epoch {epoch + 1} - Train Loss: {avg_train_loss:.4f}")
@@ -205,14 +234,14 @@ def train_detection(
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             best_model_path = output_dir / "best_model.pth"
-            torch.save(
+            save_checkpoint(
+                best_model_path,
                 {
                     "epoch": epoch + 1,
                     "model_state_dict": rtdetr.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
                     "val_loss": avg_val_loss,
                 },
-                best_model_path,
             )
             print(f"Saved best model: {best_model_path}")
 
@@ -222,7 +251,8 @@ def train_detection(
         # Save checkpoint
         if (epoch + 1) % save_every == 0 or epoch == num_epochs - 1:
             checkpoint_path = output_dir / f"checkpoint_epoch_{epoch + 1}.pth"
-            torch.save(
+            save_checkpoint(
+                checkpoint_path,
                 {
                     "epoch": epoch + 1,
                     "model_state_dict": rtdetr.state_dict(),
@@ -231,7 +261,6 @@ def train_detection(
                     "train_loss": avg_train_loss,
                     "val_loss": avg_val_loss,
                 },
-                checkpoint_path,
             )
             print(f"Saved checkpoint: {checkpoint_path}")
 
@@ -241,25 +270,28 @@ def train_detection(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train RT-DETR for object detection")
-    parser.add_argument("--train_img_dir", type=str, default="dataset/train/images")
-    parser.add_argument("--train_label_dir", type=str, default="dataset/train/labels")
-    parser.add_argument("--val_img_dir", type=str, default="dataset/val/images")
-    parser.add_argument("--val_label_dir", type=str, default="dataset/val/labels")
-    parser.add_argument("--output_dir", type=str, default="checkpoints/detection")
+    parser.add_argument("--train_img_dir", type=str, default=str(TRAIN_IMAGE_DIR))
+    parser.add_argument("--train_label_dir", type=str, default=str(TRAIN_LABEL_DIR))
+    parser.add_argument("--val_img_dir", type=str, default=str(VAL_IMAGE_DIR))
+    parser.add_argument("--val_label_dir", type=str, default=str(VAL_LABEL_DIR))
+    parser.add_argument("--output_dir", type=str, default=str(DETECTION_OUTPUT_DIR))
     parser.add_argument(
         "--encoder_pretrain_path", type=str, default=None, help="Path to pretrained encoder"
     )
-    parser.add_argument("--img_size", type=int, default=224)
-    parser.add_argument("--batch_size", type=int, default=8)
-    parser.add_argument("--num_epochs", type=int, default=100)
-    parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument("--weight_decay", type=float, default=1e-4)
-    parser.add_argument("--num_queries", type=int, default=100)
-    parser.add_argument("--num_workers", type=int, default=4)
+    parser.add_argument("--img_size", type=int, default=DEFAULT_IMG_SIZE)
+    parser.add_argument("--batch_size", type=int, default=DETECTION_BATCH_SIZE)
+    parser.add_argument("--num_epochs", type=int, default=DETECTION_NUM_EPOCHS)
+    parser.add_argument("--lr", type=float, default=DETECTION_LR)
+    parser.add_argument("--weight_decay", type=float, default=DETECTION_WEIGHT_DECAY)
+    parser.add_argument("--num_queries", type=int, default=DETECTION_NUM_QUERIES)
+    parser.add_argument("--num_workers", type=int, default=DEFAULT_NUM_WORKERS)
     parser.add_argument(
-        "--freeze_encoder_epochs", type=int, default=0, help="Freeze encoder for first N epochs"
+        "--freeze_encoder_epochs",
+        type=int,
+        default=DETECTION_FREEZE_ENCODER_EPOCHS,
+        help="Freeze encoder for first N epochs",
     )
-    parser.add_argument("--save_every", type=int, default=10)
+    parser.add_argument("--save_every", type=int, default=DETECTION_SAVE_EVERY)
 
     args = parser.parse_args()
 
