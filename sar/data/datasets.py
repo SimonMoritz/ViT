@@ -5,10 +5,9 @@ from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
-from PIL import Image
 import torch
+from PIL import Image
 from torch.utils.data import Dataset
-
 
 Transform = Callable[..., Any]
 TensorDict = dict[str, torch.Tensor]
@@ -52,19 +51,19 @@ class PretrainDataset(Dataset[PretrainSample]):
         img_path = self.image_paths[index]
 
         # Load image
-        image = Image.open(img_path).convert('RGB')
+        image = Image.open(img_path).convert("RGB")
         image = np.array(image)
 
         # Apply transform
         if self.transform is not None:
             # Check if it's a dual view transform (for SimCLR)
-            if hasattr(self.transform, '__call__') and hasattr(self.transform, 'transform'):
+            if hasattr(self.transform, "__call__") and hasattr(self.transform, "transform"):
                 # DualViewTransform
                 view1, view2 = self.transform(image)
                 return view1, view2
             else:
                 # Regular transform
-                image = self.transform(image=image)['image']
+                image = self.transform(image=image)["image"]
         else:
             image = torch.from_numpy(image).permute(2, 0, 1).float() / 255.0
 
@@ -127,14 +126,14 @@ class DetectionDataset(Dataset[DetectionSample | DetectionTuple]):
         label_path = self.label_dir / (img_path.stem + ".txt")
 
         # Load image
-        image = Image.open(img_path).convert('RGB')
+        image = Image.open(img_path).convert("RGB")
         image = np.array(image)
 
         # Load labels (YOLO format: class cx cy w h, normalized)
         boxes = []
         labels = []
 
-        with open(label_path, 'r') as f:
+        with open(label_path) as f:
             for line in f:
                 parts = line.strip().split()
                 if len(parts) >= 5:
@@ -156,11 +155,19 @@ class DetectionDataset(Dataset[DetectionSample | DetectionTuple]):
             transformed = self.transform(
                 image=image,
                 bboxes=boxes.tolist() if len(boxes) > 0 else [],
-                class_labels=labels.tolist() if len(labels) > 0 else []
+                class_labels=labels.tolist() if len(labels) > 0 else [],
             )
-            image = transformed['image']
-            boxes = np.array(transformed['bboxes'], dtype=np.float32) if transformed['bboxes'] else np.zeros((0, 4), dtype=np.float32)
-            labels = np.array(transformed['class_labels'], dtype=np.int64) if transformed['class_labels'] else np.zeros((0,), dtype=np.int64)
+            image = transformed["image"]
+            boxes = (
+                np.array(transformed["bboxes"], dtype=np.float32)
+                if transformed["bboxes"]
+                else np.zeros((0, 4), dtype=np.float32)
+            )
+            labels = (
+                np.array(transformed["class_labels"], dtype=np.int64)
+                if transformed["class_labels"]
+                else np.zeros((0,), dtype=np.int64)
+            )
         else:
             # Convert to tensor manually if no transform
             image = torch.from_numpy(image).permute(2, 0, 1).float() / 255.0
@@ -171,15 +178,17 @@ class DetectionDataset(Dataset[DetectionSample | DetectionTuple]):
 
         if self.return_dict:
             target = {
-                'labels': labels,
-                'boxes': boxes,
+                "labels": labels,
+                "boxes": boxes,
             }
             return image, target
         else:
             return image, boxes, labels
 
 
-def collate_fn_detection(batch: list[DetectionSample | DetectionTuple]) -> tuple[torch.Tensor, list[TensorDict]]:
+def collate_fn_detection(
+    batch: list[DetectionSample | DetectionTuple],
+) -> tuple[torch.Tensor, list[TensorDict]]:
     """
     Custom collate function for detection dataset.
     Handles variable number of boxes per image.
@@ -203,20 +212,24 @@ def collate_fn_detection(batch: list[DetectionSample | DetectionTuple]) -> tuple
             # Tuple format
             image, boxes, labels = cast(DetectionTuple, item)
             images.append(image)
-            targets.append({'labels': labels, 'boxes': boxes})
+            targets.append({"labels": labels, "boxes": boxes})
 
     images = torch.stack(images, dim=0)
     return images, targets
 
 
 if __name__ == "__main__":
-    from sar.augmentation import get_pretrain_augmentation, get_detection_train_augmentation, DualViewTransform, get_simclr_augmentation
+    from sar.augmentation import (
+        DualViewTransform,
+        get_detection_train_augmentation,
+        get_pretrain_augmentation,
+        get_simclr_augmentation,
+    )
 
     # Test PretrainDataset
     print("Testing PretrainDataset...")
     pretrain_ds = PretrainDataset(
-        img_dir="Airport_Dataset_v0_images",
-        transform=get_pretrain_augmentation(224)
+        img_dir="Airport_Dataset_v0_images", transform=get_pretrain_augmentation(224)
     )
     print(f"Dataset size: {len(pretrain_ds)}")
     img = pretrain_ds[0]
@@ -227,7 +240,7 @@ if __name__ == "__main__":
     print("\nTesting DualViewTransform...")
     simclr_ds = PretrainDataset(
         img_dir="Airport_Dataset_v0_images",
-        transform=DualViewTransform(get_simclr_augmentation(224))
+        transform=DualViewTransform(get_simclr_augmentation(224)),
     )
     view1, view2 = simclr_ds[0]
     print(f"View1 shape: {view1.shape}, View2 shape: {view2.shape}")
@@ -238,7 +251,7 @@ if __name__ == "__main__":
         img_dir="dataset/train/images",
         label_dir="dataset/train/labels",
         transform=get_detection_train_augmentation(224),
-        return_dict=True
+        return_dict=True,
     )
     print(f"Dataset size: {len(det_ds)}")
     img, target = cast(DetectionSample, det_ds[0])
@@ -249,6 +262,7 @@ if __name__ == "__main__":
 
     # Test collate function
     from torch.utils.data import DataLoader
+
     print("\nTesting DataLoader with collate_fn...")
     loader = DataLoader(det_ds, batch_size=2, collate_fn=collate_fn_detection, shuffle=True)
     images, targets = next(iter(loader))

@@ -59,10 +59,7 @@ class MAEDecoder(nn.Module):
 
     def _init_pos_embed(self, n_patches, device):
         """Initialize positional embeddings if not already done."""
-        if (
-            self.decoder_pos_embed is None
-            or self.decoder_pos_embed.shape[1] != n_patches
-        ):
+        if self.decoder_pos_embed is None or self.decoder_pos_embed.shape[1] != n_patches:
             self.decoder_pos_embed = nn.Parameter(
                 torch.zeros(1, n_patches, self.decoder_embed_dim, device=device),
                 requires_grad=True,
@@ -88,9 +85,7 @@ class MAEDecoder(nn.Module):
         x = self.decoder_embed(x)  # (B, N_visible, decoder_D)
 
         # Create full sequence with mask tokens
-        mask_tokens = self.mask_token.repeat(
-            B, N_total - N_visible, 1
-        )  # (B, N_masked, decoder_D)
+        mask_tokens = self.mask_token.repeat(B, N_total - N_visible, 1)  # (B, N_masked, decoder_D)
 
         # Combine visible and masked tokens
         # We need to unshuffle: put visible tokens back in their original positions

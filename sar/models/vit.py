@@ -2,6 +2,7 @@
 
 import torch
 import torch.nn as nn
+from torch import Tensor
 
 
 class PatchEmbedding(nn.Module):

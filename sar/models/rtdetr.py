@@ -30,18 +30,16 @@ class MLP(nn.Module):
 class TransformerDecoderLayer(nn.Module):
     """Transformer decoder layer for DETR."""
 
-    def __init__(self, d_model: int = 256, nhead: int = 8, dim_feedforward: int = 1024, dropout: float = 0.1) -> None:
+    def __init__(
+        self, d_model: int = 256, nhead: int = 8, dim_feedforward: int = 1024, dropout: float = 0.1
+    ) -> None:
         super().__init__()
 
         # Self-attention
-        self.self_attn = nn.MultiheadAttention(
-            d_model, nhead, dropout=dropout, batch_first=True
-        )
+        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=True)
 
         # Cross-attention
-        self.cross_attn = nn.MultiheadAttention(
-            d_model, nhead, dropout=dropout, batch_first=True
-        )
+        self.cross_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=True)
 
         # Feed-forward
         self.linear1 = nn.Linear(d_model, dim_feedforward)
@@ -188,9 +186,7 @@ class RTDETR(nn.Module):
 
         # Predictions
         pred_logits = self.class_embed(tgt)  # (B, num_queries, num_classes+1)
-        pred_boxes = self.bbox_embed(
-            tgt
-        ).sigmoid()  # (B, num_queries, 4), normalized to [0, 1]
+        pred_boxes = self.bbox_embed(tgt).sigmoid()  # (B, num_queries, 4), normalized to [0, 1]
 
         return pred_logits, pred_boxes
 
@@ -207,7 +203,13 @@ class RTDETRLoss(nn.Module):
     then computes classification and box regression losses.
     """
 
-    def __init__(self, num_classes: int = 1, cost_class: float = 1.0, cost_bbox: float = 5.0, cost_giou: float = 2.0) -> None:
+    def __init__(
+        self,
+        num_classes: int = 1,
+        cost_class: float = 1.0,
+        cost_bbox: float = 5.0,
+        cost_giou: float = 2.0,
+    ) -> None:
         """
         Args:
             num_classes: Number of classes (excluding background)
@@ -221,7 +223,9 @@ class RTDETRLoss(nn.Module):
         self.cost_bbox = cost_bbox
         self.cost_giou = cost_giou
 
-    def forward(self, pred_logits: Tensor, pred_boxes: Tensor, targets: list[TensorDict]) -> dict[str, Tensor]:
+    def forward(
+        self, pred_logits: Tensor, pred_boxes: Tensor, targets: list[TensorDict]
+    ) -> dict[str, Tensor]:
         """
         Args:
             pred_logits: (B, num_queries, num_classes+1)
@@ -273,9 +277,7 @@ class RTDETRLoss(nn.Module):
             target_classes_o[batch_i, src_idx] = targets[batch_i]["labels"][tgt_idx]
 
         # Classification loss (cross-entropy)
-        loss_ce = F.cross_entropy(
-            pred_logits.transpose(1, 2), target_classes_o, weight=None
-        )
+        loss_ce = F.cross_entropy(pred_logits.transpose(1, 2), target_classes_o, weight=None)
 
         # Bbox losses (only for matched predictions)
         idx_src = []
@@ -293,9 +295,7 @@ class RTDETRLoss(nn.Module):
             target_boxes_matched = torch.cat([t["boxes"] for t in targets])[idx_tgt]
 
             # L1 loss
-            loss_bbox = F.l1_loss(
-                pred_boxes_matched, target_boxes_matched, reduction="mean"
-            )
+            loss_bbox = F.l1_loss(pred_boxes_matched, target_boxes_matched, reduction="mean")
 
             # GIoU loss
             loss_giou = self.giou_loss(pred_boxes_matched, target_boxes_matched)
@@ -357,14 +357,10 @@ class RTDETRLoss(nn.Module):
             cost_class = -out_prob[:, tgt_ids]  # (num_queries, num_targets)
 
             # Bbox L1 cost
-            cost_bbox = torch.cdist(
-                out_bbox, tgt_bbox, p=1
-            )  # (num_queries, num_targets)
+            cost_bbox = torch.cdist(out_bbox, tgt_bbox, p=1)  # (num_queries, num_targets)
 
             # GIoU cost
-            cost_giou = -self.generalized_box_iou(
-                out_bbox, tgt_bbox
-            )  # (num_queries, num_targets)
+            cost_giou = -self.generalized_box_iou(out_bbox, tgt_bbox)  # (num_queries, num_targets)
 
             # Final cost matrix
             C = (
@@ -411,12 +407,8 @@ class RTDETRLoss(nn.Module):
         area_c = wh[:, :, 0] * wh[:, :, 1]
 
         # GIoU
-        area1 = (boxes1_xyxy[:, 2] - boxes1_xyxy[:, 0]) * (
-            boxes1_xyxy[:, 3] - boxes1_xyxy[:, 1]
-        )
-        area2 = (boxes2_xyxy[:, 2] - boxes2_xyxy[:, 0]) * (
-            boxes2_xyxy[:, 3] - boxes2_xyxy[:, 1]
-        )
+        area1 = (boxes1_xyxy[:, 2] - boxes1_xyxy[:, 0]) * (boxes1_xyxy[:, 3] - boxes1_xyxy[:, 1])
+        area2 = (boxes2_xyxy[:, 2] - boxes2_xyxy[:, 0]) * (boxes2_xyxy[:, 3] - boxes2_xyxy[:, 1])
         union = area1[:, None] + area2[None, :] - iou * area1[:, None]
 
         giou = iou - (area_c - union) / area_c

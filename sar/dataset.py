@@ -1,7 +1,7 @@
-import shutil
-from pathlib import Path
 import random
+import shutil
 from collections import defaultdict
+from pathlib import Path
 
 
 def split_dataset(
@@ -45,8 +45,7 @@ def split_dataset(
     output_dir = Path(output_dir)
 
     # Validate ratios
-    assert abs(train_ratio + val_ratio + test_ratio - 1.0) < 1e-6, \
-        "Ratios must sum to 1.0"
+    assert abs(train_ratio + val_ratio + test_ratio - 1.0) < 1e-6, "Ratios must sum to 1.0"
 
     # Get all image files
     images = sorted(img_dir.glob("*.jpg"))
@@ -82,8 +81,8 @@ def split_dataset(
 
     # Split airports into train/val/test
     train_airports = airports[:n_train]
-    val_airports = airports[n_train:n_train + n_val]
-    test_airports = airports[n_train + n_val:]
+    val_airports = airports[n_train : n_train + n_val]
+    test_airports = airports[n_train + n_val :]
 
     # Collect images for each split
     splits = {
@@ -116,7 +115,9 @@ def split_dataset(
             else:
                 split_airports.add(img_path.stem)
 
-        print(f"{split_name:5s}: {len(split_images):3d} images from {len(split_airports):3d} airports")
+        print(
+            f"{split_name:5s}: {len(split_images):3d} images from {len(split_airports):3d} airports"
+        )
 
     print(f"\nDataset split complete! Output: {output_dir}")
     print(f"Total airports: {n_airports}")
