@@ -1,10 +1,14 @@
 """Heavy augmentation pipeline for SAR images."""
 
+from collections.abc import Callable
+from typing import Any
+
 import albumentations as A
+import torch
 from albumentations.pytorch import ToTensorV2
 
 
-def get_pretrain_augmentation(img_size=224):
+def get_pretrain_augmentation(img_size: int = 224) -> A.Compose:
     """
     Heavy augmentation for self-supervised pretraining (MAE/SimCLR).
 
@@ -66,17 +70,17 @@ def get_pretrain_augmentation(img_size=224):
                 num_holes_range=(4, 8),
                 hole_height_range=(int(img_size * 0.05), int(img_size * 0.1)),
                 hole_width_range=(int(img_size * 0.05), int(img_size * 0.1)),
-                fill_value=0,
+                fill=0,
                 p=0.3,
             ),
             # Normalize (assuming grayscale or RGB with similar statistics)
-            A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
             ToTensorV2(),
         ]
     )
 
 
-def get_simclr_augmentation(img_size=224):
+def get_simclr_augmentation(img_size: int = 224) -> A.Compose:
     """
     Two-view augmentation for SimCLR.
     Returns a transform that creates two augmented views of the same image.
@@ -91,7 +95,10 @@ def get_simclr_augmentation(img_size=224):
         [
             A.Resize(int(img_size * 1.2), int(img_size * 1.2)),
             A.RandomResizedCrop(
-                img_size, img_size, scale=(0.6, 1.0), ratio=(0.75, 1.33), p=1.0
+                size=(img_size, img_size),
+                scale=(0.6, 1.0),
+                ratio=(0.75, 1.33),
+                p=1.0,
             ),
             A.HorizontalFlip(p=0.5),
             A.VerticalFlip(p=0.5),
@@ -109,13 +116,13 @@ def get_simclr_augmentation(img_size=224):
             # Noise
             A.GaussNoise(p=0.3),
             # Normalize
-            A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
             ToTensorV2(),
         ]
     )
 
 
-def get_detection_train_augmentation(img_size=224):
+def get_detection_train_augmentation(img_size: int = 224) -> A.Compose:
     """
     Augmentation for detection training (with bounding boxes).
 
@@ -139,9 +146,7 @@ def get_detection_train_augmentation(img_size=224):
                 p=0.7,
             ),
             # Random crop/scale (bbox-safe)
-            A.RandomSizedBBoxSafeCrop(
-                height=img_size, width=img_size, erosion_rate=0.2, p=0.5
-            ),
+            A.RandomSizedBBoxSafeCrop(height=img_size, width=img_size, erosion_rate=0.2, p=0.5),
             # Intensity augmentations
             A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.7),
             A.OneOf(
@@ -153,18 +158,18 @@ def get_detection_train_augmentation(img_size=224):
             ),
             A.GaussNoise(p=0.3),
             # Normalize
-            A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
             ToTensorV2(),
         ],
         bbox_params=A.BboxParams(
-            format="yolo",  # Normalized (cx, cy, w, h)
+            coord_format="yolo",  # Normalized (cx, cy, w, h)
             label_fields=["class_labels"],
             min_visibility=0.3,  # Keep boxes with at least 30% visible
         ),
     )
 
 
-def get_detection_val_augmentation(img_size=224):
+def get_detection_val_augmentation(img_size: int = 224) -> A.Compose:
     """
     Minimal augmentation for validation/testing.
 
@@ -176,11 +181,11 @@ def get_detection_val_augmentation(img_size=224):
     return A.Compose(
         [
             A.Resize(img_size, img_size),
-            A.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
             ToTensorV2(),
         ],
         bbox_params=A.BboxParams(
-            format="yolo",
+            coord_format="yolo",
             label_fields=["class_labels"],
         ),
     )
@@ -192,14 +197,14 @@ class DualViewTransform:
     Used for SimCLR training.
     """
 
-    def __init__(self, transform):
+    def __init__(self, transform: Callable[..., dict[str, Any]]) -> None:
         """
         Args:
             transform: Albumentations transform to apply
         """
         self.transform = transform
 
-    def __call__(self, image):
+    def __call__(self, image: Any) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             image: numpy array (H, W, C)
@@ -212,8 +217,9 @@ class DualViewTransform:
 
 
 if __name__ == "__main__":
-    import cv2
     from pathlib import Path
+
+    import cv2
 
     # Test augmentations
     img_path = Path("Airport_Dataset_v0_images")

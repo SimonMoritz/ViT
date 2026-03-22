@@ -1,6 +1,7 @@
+from pathlib import Path
+
 import streamlit as st
 from PIL import Image, ImageDraw
-from pathlib import Path
 
 IMG_DIR = Path("Airport_Dataset_v0_images")
 LBL_DIR = Path("Airport_Dataset_v0_labels")
@@ -12,11 +13,15 @@ assert images, "No images found"
 if "idx" not in st.session_state:
     st.session_state.idx = 0
 
+
 def next_img():
     st.session_state.idx = min(st.session_state.idx + 1, len(images) - 1)
 
+
 def prev_img():
     st.session_state.idx = max(st.session_state.idx - 1, 0)
+
+
 # ----------------------------------------------
 
 # --- navigation UI ---

@@ -1,5 +1,7 @@
 """Masked Autoencoder (MAE) for self-supervised pretraining before supervied training."""
 
+from typing import cast
+
 import torch
 import torch.nn as nn
 
@@ -28,7 +30,7 @@ class MAEDecoder(nn.Module):
         self.mask_token = nn.Parameter(torch.zeros(1, 1, decoder_embed_dim))
 
         # Decoder position embeddings (will be initialized based on input size)
-        self.decoder_pos_embed = None
+        self.decoder_pos_embed: nn.Parameter | None = None
 
         # Transformer decoder blocks
         from sar.models.vit import TransformerBlock
@@ -57,10 +59,7 @@ class MAEDecoder(nn.Module):
 
     def _init_pos_embed(self, n_patches, device):
         """Initialize positional embeddings if not already done."""
-        if (
-            self.decoder_pos_embed is None
-            or self.decoder_pos_embed.shape[1] != n_patches
-        ):
+        if self.decoder_pos_embed is None or self.decoder_pos_embed.shape[1] != n_patches:
             self.decoder_pos_embed = nn.Parameter(
                 torch.zeros(1, n_patches, self.decoder_embed_dim, device=device),
                 requires_grad=True,
@@ -86,9 +85,7 @@ class MAEDecoder(nn.Module):
         x = self.decoder_embed(x)  # (B, N_visible, decoder_D)
 
         # Create full sequence with mask tokens
-        mask_tokens = self.mask_token.repeat(
-            B, N_total - N_visible, 1
-        )  # (B, N_masked, decoder_D)
+        mask_tokens = self.mask_token.repeat(B, N_total - N_visible, 1)  # (B, N_masked, decoder_D)
 
         # Combine visible and masked tokens
         # We need to unshuffle: put visible tokens back in their original positions
@@ -106,7 +103,7 @@ class MAEDecoder(nn.Module):
             x_full[i, masked_pos] = mask_tokens[i, : len(masked_pos)]
 
         # Add positional embeddings
-        x_full = x_full + self.decoder_pos_embed
+        x_full = x_full + cast(nn.Parameter, self.decoder_pos_embed)
 
         # Decoder blocks
         for block in self.decoder_blocks:
