@@ -5,19 +5,29 @@ from typing import cast
 import torch
 import torch.nn as nn
 
+from sar.config import (
+    MAE_MASK_RATIO,
+    MAE_STANDARD_DECODER_DEPTH,
+    MAE_STANDARD_DECODER_EMBED_DIM,
+    MAE_STANDARD_DECODER_HEADS,
+    VIT_EMBED_DIM,
+    VIT_PATCH_SIZE,
+)
+from sar.models.vit import ViTTiny
+
 
 class MAEDecoder(nn.Module):
     """Lightweight decoder for MAE reconstruction."""
 
     def __init__(
         self,
-        embed_dim=192,
-        decoder_embed_dim=128,
-        decoder_depth=4,
-        decoder_n_heads=4,
-        patch_size=16,
-        in_channels=3,
-    ):
+        embed_dim: int = VIT_EMBED_DIM,
+        decoder_embed_dim: int = MAE_STANDARD_DECODER_EMBED_DIM,
+        decoder_depth: int = MAE_STANDARD_DECODER_DEPTH,
+        decoder_n_heads: int = MAE_STANDARD_DECODER_HEADS,
+        patch_size: int = VIT_PATCH_SIZE,
+        in_channels: int = 3,
+    ) -> None:
         super().__init__()
         self.decoder_embed_dim = decoder_embed_dim
         self.patch_size = patch_size
@@ -54,10 +64,10 @@ class MAEDecoder(nn.Module):
 
         self._init_weights()
 
-    def _init_weights(self):
+    def _init_weights(self) -> None:
         nn.init.trunc_normal_(self.mask_token, std=0.02)
 
-    def _init_pos_embed(self, n_patches, device):
+    def _init_pos_embed(self, n_patches: int, device: torch.device) -> None:
         """Initialize positional embeddings if not already done."""
         if self.decoder_pos_embed is None or self.decoder_pos_embed.shape[1] != n_patches:
             self.decoder_pos_embed = nn.Parameter(
@@ -66,7 +76,7 @@ class MAEDecoder(nn.Module):
             )
             nn.init.trunc_normal_(self.decoder_pos_embed, std=0.02)
 
-    def forward(self, x, mask_indices):
+    def forward(self, x: torch.Tensor, mask_indices: torch.Tensor) -> torch.Tensor:
         """
         Args:
             x: (B, N_visible, D) - visible patch tokens from encoder
@@ -74,7 +84,7 @@ class MAEDecoder(nn.Module):
         Returns:
             (B, N_total, patch_size^2 * C) - reconstructed patches
         """
-        B, N_visible, D = x.shape
+        B, N_visible, _ = x.shape
         N_total = mask_indices.shape[1]
         device = x.device
 
@@ -126,14 +136,14 @@ class MAE(nn.Module):
 
     def __init__(
         self,
-        encoder,
-        mask_ratio=0.75,
-        decoder_embed_dim=128,
-        decoder_depth=4,
-        decoder_n_heads=4,
-        patch_size=16,
-        in_channels=3,
-    ):
+        encoder: ViTTiny,
+        mask_ratio: float = MAE_MASK_RATIO,
+        decoder_embed_dim: int = MAE_STANDARD_DECODER_EMBED_DIM,
+        decoder_depth: int = MAE_STANDARD_DECODER_DEPTH,
+        decoder_n_heads: int = MAE_STANDARD_DECODER_HEADS,
+        patch_size: int = VIT_PATCH_SIZE,
+        in_channels: int = 3,
+    ) -> None:
         """
         Args:
             encoder: ViT encoder (e.g., ViTTiny)
@@ -160,7 +170,7 @@ class MAE(nn.Module):
             in_channels=in_channels,
         )
 
-    def patchify(self, imgs):
+    def patchify(self, imgs: torch.Tensor) -> torch.Tensor:
         """
         Convert images to patches.
 
@@ -179,7 +189,7 @@ class MAE(nn.Module):
 
         return x
 
-    def unpatchify(self, x, H, W):
+    def unpatchify(self, x: torch.Tensor, H: int, W: int) -> torch.Tensor:
         """
         Convert patches back to images.
 
@@ -200,7 +210,7 @@ class MAE(nn.Module):
 
         return imgs
 
-    def random_masking(self, x):
+    def random_masking(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Perform random masking by shuffling patches.
 
@@ -229,7 +239,7 @@ class MAE(nn.Module):
 
         return x_masked, mask, ids_restore
 
-    def forward(self, imgs):
+    def forward(self, imgs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Forward pass for MAE pretraining.
 
@@ -240,7 +250,7 @@ class MAE(nn.Module):
             pred: Reconstructed images (B, C, H, W)
             mask: Binary mask (B, N)
         """
-        B, C, H, W = imgs.shape
+        _B, _C, H, W = imgs.shape
 
         # Encode with masking
         # Get patch embeddings (before transformer)
@@ -281,21 +291,3 @@ class MAE(nn.Module):
             pred_imgs = self.unpatchify(pred_patches_full, H, W)
 
         return loss, pred_imgs, mask
-
-
-if __name__ == "__main__":
-    from sar.models.vit import ViTTiny
-
-    # Test MAE
-    encoder = ViTTiny(img_size=224, use_cls_token=False)
-    mae = MAE(encoder, mask_ratio=0.75, patch_size=16)
-
-    x = torch.randn(2, 3, 224, 224)
-    loss, pred, mask = mae(x)
-
-    print(f"Input shape: {x.shape}")
-    print(f"Prediction shape: {pred.shape}")
-    print(f"Mask shape: {mask.shape}")
-    print(f"Loss: {loss.item():.4f}")
-    print(f"Masked ratio: {mask.float().mean():.2f}")
-    print(f"MAE params: {sum(p.numel() for p in mae.parameters()) / 1e6:.2f}M")
